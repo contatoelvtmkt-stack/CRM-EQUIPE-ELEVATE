@@ -222,7 +222,7 @@ function showOnboarding() {
     el.innerHTML = `<div class="onb-in">
       <div class="onb-top">
         <span>${String(i + 1).padStart(2, '0')} / ${String(SLIDES.length).padStart(2, '0')}</span>
-        <span class="bars">${SLIDES.map((_, k) => `<i class="${k < i ? 'on' : k === i ? 'cur' : ''}"></i>`).join('')}</span>
+        <span class="progress">${SLIDES.map((_, k) => `<i class="${k < i ? 'on' : k === i ? 'cur' : ''}"></i>`).join('')}</span>
         <button data-skip>Pular</button>
       </div>
       <div class="onb-slide">

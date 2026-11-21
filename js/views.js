@@ -179,6 +179,7 @@ export async function viewFluxo() {
         <select class="input" id="fc" aria-label="Filtrar por cliente"><option value="">Todos os clientes</option>
           ${state.clients.map((c) => `<option value="${c.id}" ${state.fluxoClient === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select>
       </div>
+      <p class="drag-hint rise" style="--i:2"><span class="d-only">Arraste os cards entre as etapas para atualizar.</span><span class="m-only">Segure um card e arraste até uma etapa acima para mover.</span></p>
       <div class="chips" id="chips"></div>
       <div class="kanban" id="kb"></div>
     </div>`;
@@ -200,8 +201,104 @@ export async function viewFluxo() {
   $('#q').oninput = (e) => { clearTimeout(tmr); tmr = setTimeout(() => { state.fluxoQuery = e.target.value; draw(); }, 120); };
   $('#fc').onchange = (e) => { state.fluxoClient = e.target.value; draw(); };
   $('#chips').onclick = (e) => { const b = e.target.closest('[data-k]'); if (b) { state.fluxoStage = b.dataset.k; draw(); } };
-  $('#kb').onclick = (e) => { const b = e.target.closest('[data-id]'); if (b) taskSheet(items.find((t) => t.id === b.dataset.id), () => viewFluxo()); };
+  $('#kb').onclick = (e) => {
+    if (dragJustEnded) return;
+    const b = e.target.closest('[data-id]'); if (b) taskSheet(items.find((t) => t.id === b.dataset.id), () => viewFluxo());
+  };
   $('#fx-new').onclick = () => newTaskSheet({}, () => viewFluxo());
+
+  // ---- arrastar e soltar entre etapas ----
+  const moveTo = async (t, target) => {
+    if (!t || t.stage === target) return;
+    if (target === 'a_fazer') return toast('"A fazer" é só para o que ainda não foi entregue. Use "Em alteração" para devolver.');
+    if (target === 'em_alteracao') return askChange(t);
+    const prev = { stage: t.stage, stage_at: t.stage_at };
+    Object.assign(t, { stage: target, stage_at: new Date().toISOString() });
+    draw();
+    try { await api.review(t.id, 'mover', '', target); toast(`Movido para ${STAGE[target]}.`); }
+    catch (er) { Object.assign(t, prev); draw(); toast(er.message); }
+  };
+  const askChange = (t) => openSheet(`
+    <div class="sheet-head"><div><small class="muted">Mover para Em alteração</small><h2>${esc(t.title)}</h2></div><button class="icon-btn" data-close aria-label="Fechar">${I.x}</button></div>
+    <div class="field"><label for="dn">O que precisa mudar? <span class="red">*</span></label><textarea class="input" id="dn" placeholder="Descreva o ajuste para ${esc(firstName(person(t.assigned_to).name))}"></textarea></div>
+    <div class="err" id="dn-err"></div>
+    <div class="actions"><button class="btn btn-red" id="dn-ok">Enviar pedido de alteração ${I.arrow}</button></div>`,
+  (root, close) => {
+    $('#dn', root).focus();
+    $('#dn-ok', root).onclick = (e) => {
+      const note = $('#dn', root).value.trim();
+      if (!note) return ($('#dn-err', root).textContent = 'Descreva o ajuste.');
+      busy(e.currentTarget, async () => {
+        try { await api.review(t.id, 'alterar', note); close(); toast(`Voltou para ${firstName(person(t.assigned_to).name)} com o pedido de ajuste.`); viewFluxo(); }
+        catch (er) { $('#dn-err', root).textContent = er.message; }
+      });
+    };
+  });
+  enableDrag($('.page', view()), (id, target) => moveTo(items.find((t) => t.id === id), target));
+}
+
+// Arrastar com mouse (move 6px) ou com o dedo (segurar 300ms). Solta numa coluna (desktop) ou num botão de etapa (celular).
+let dragJustEnded = false;
+let s = null; // arraste em andamento: { card, x, y, timer, ghost, dragging, over }
+let dropCb = null;
+const targetAt = (x, y) => document.elementFromPoint(x, y)?.closest('.kcol[data-k], .chips [data-k]');
+const start = () => {
+  const r = s.card.getBoundingClientRect();
+  s.dragging = true; s.dx = s.x - r.left; s.dy = s.y - r.top;
+  s.ghost = s.card.cloneNode(true);
+  s.ghost.className += ' drag-ghost'; s.ghost.style.width = r.width + 'px';
+  document.body.appendChild(s.ghost);
+  s.card.classList.add('drag-src'); document.body.classList.add('is-dragging');
+  if (navigator.vibrate) navigator.vibrate(12);
+  place(s.x, s.y);
+};
+const place = (x, y) => {
+  s.ghost.style.transform = `translate(${x - s.dx}px, ${y - s.dy}px) rotate(2.5deg)`;
+  const t = targetAt(x, y);
+  if (t !== s.over) { s.over?.classList.remove('drop-on'); t?.classList.add('drop-on'); s.over = t; }
+  // rolagem automática perto das bordas
+  const sc = document.elementFromPoint(x, y)?.closest('.kanban, .chips');
+  if (sc) { const r = sc.getBoundingClientRect(); if (x < r.left + 50) sc.scrollLeft -= 14; else if (x > r.right - 50) sc.scrollLeft += 14; }
+  if (y < 70) window.scrollBy(0, -12); else if (y > window.innerHeight - 110) window.scrollBy(0, 12);
+};
+const end = (drop) => {
+  if (!s) return;
+  clearTimeout(s.timer);
+  if (s.dragging) {
+    const k = s.over?.dataset.k; const id = s.card.dataset.id;
+    s.ghost.remove(); s.card.classList.remove('drag-src'); s.over?.classList.remove('drop-on');
+    document.body.classList.remove('is-dragging');
+    dragJustEnded = true; setTimeout(() => (dragJustEnded = false), 60);
+    if (drop && k && dropCb) dropCb(id, k);
+  }
+  s = null;
+};
+
+let dragGlobals = false;
+function enableDrag(root, onDrop) {
+  dropCb = onDrop;
+  root.addEventListener('pointerdown', (e) => {
+    const card = e.target.closest('.kcard'); if (!card || e.button > 0) return;
+    s = { card, x: e.clientX, y: e.clientY, touch: e.pointerType !== 'mouse' };
+    if (s.touch) s.timer = setTimeout(() => s && start(), 300);
+  });
+  root.addEventListener('touchmove', (e) => { if (s?.dragging) e.preventDefault(); }, { passive: false });
+  root.addEventListener('contextmenu', (e) => { if (e.target.closest('.kcard')) e.preventDefault(); });
+  if (dragGlobals) return;
+  dragGlobals = true;
+  window.addEventListener('pointermove', (e) => {
+    if (!s) return;
+    const moved = Math.hypot(e.clientX - s.x, e.clientY - s.y);
+    if (!s.dragging) {
+      if (s.touch) { if (moved > 10) end(false); return; } // o dedo rolou a tela: não é arrastar
+      if (moved < 6) return;
+      start();
+    }
+    e.preventDefault();
+    place(e.clientX, e.clientY);
+  }, { passive: false });
+  window.addEventListener('pointerup', () => end(true));
+  window.addEventListener('pointercancel', () => end(false));
 }
 
 // =====================================================================

@@ -67,7 +67,7 @@ function supabaseApi() {
     async createTask(t) { return ok(await sb.from('tasks').insert(t).select().single()); },
     async updateTask(id, patch) { return ok(await sb.from('tasks').update(patch).eq('id', id).select().single()); },
     async deleteTask(id) { ok(await sb.from('tasks').delete().eq('id', id)); },
-    async review(id, action, note = '') { ok(await sb.rpc('review_task', { p_id: id, p_action: action, p_note: note })); },
+    async review(id, action, note = '', stage = null) { ok(await sb.rpc('review_task', { p_id: id, p_action: action, p_note: note, p_stage: stage })); },
     async updateProfile(id, patch) { return ok(await sb.from('profiles').update(patch).eq('id', id).select().single()); },
     async uploadPhoto(file) {
       const id = await getUid();
@@ -233,8 +233,9 @@ function demoApi() {
       return wait(x);
     },
     async deleteTask(id) { tasks.splice(tasks.findIndex((k) => k.id === id), 1); },
-    async review(id, action, note = '') {
+    async review(id, action, note = '', stage = null) {
       const x = tasks.find((k) => k.id === id);
+      if (action === 'mover') { Object.assign(x, { stage, stage_at: new Date().toISOString() }); return; }
       const nowIso = new Date().toISOString();
       if (action === 'alterar') {
         if (x.task_date === t && x.status !== 'finalizada') Object.assign(x, { status: 'em_alteracao', stage: 'em_alteracao', review_note: note, stage_at: nowIso });

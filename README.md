@@ -49,6 +49,17 @@ No GitHub Pages todos os links mostram a mesma prévia (logo da Elevate). Para c
 
 A função `api/og.js` + `vercel.json` cuidam da prévia; pessoas abrem a página normal.
 
+## Publicação automática no Instagram
+
+O CRM publica sozinho os posts com **agendamento confirmado** pela social media, na data e hora marcadas (confere a cada 5 minutos). Funciona com feed, carrossel (2 a 10 mídias), Reels (vídeo MP4/MOV) e story. Imagens PNG/WebP são convertidas em JPG no envio.
+
+Configuração (uma vez):
+1. Meta: usuário do sistema **CRM Elevate** no portfólio da Elevate, com as contas do Instagram dos clientes atribuídas e um **token** (validade: nunca) com `instagram_basic`, `instagram_content_publish`, `instagram_manage_insights`, `business_management`, `pages_show_list`, `pages_read_engagement`.
+2. Supabase → *Edge Functions → Secrets*: criar `META_TOKEN` com o token.
+3. Supabase → *Edge Functions → Deploy a new function → Via Editor*: publicar `ig-accounts` e `ig-publish` com o código de `supabase/functions/…/index.ts`, e desligar a verificação de JWT de cada uma.
+4. Rodar `sql/cron.sql` no SQL Editor.
+5. No CRM: *Equipe → Clientes →* botão do Instagram *→ Buscar contas liberadas* e escolher a conta de cada cliente.
+
 ## Testar sem banco
 
 Abra o site com `?demo` no fim do endereço (ex.: `index.html?demo`) para navegar com dados de exemplo.

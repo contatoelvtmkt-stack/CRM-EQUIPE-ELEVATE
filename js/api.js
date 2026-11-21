@@ -38,6 +38,19 @@ export async function squareImage(file, size = 400) {
   } finally { URL.revokeObjectURL(url); }
 }
 
+// PNG/WebP viram JPG de alta qualidade (o Instagram só publica JPG); fundo transparente vira branco
+export async function toJpegIfNeeded(file) {
+  if (!/^image\/(png|webp)$/i.test(file.type)) return file;
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+    const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0);
+    const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.95));
+    return new File([blob], file.name.replace(/\.(png|webp)$/i, '') + '.jpg', { type: 'image/jpeg' });
+  } catch { return file; } finally { URL.revokeObjectURL(url); }
+}
+
 // ---------------------------------------------------------------------
 // Supabase (produção)
 // ---------------------------------------------------------------------
@@ -93,7 +106,8 @@ function supabaseApi() {
     async updateClient(id, patch) { return ok(await sb.from('clients').update(patch).eq('id', id).select().single()); },
     async attachments(rootId) { return ok(await sb.from('task_attachments').select('*').eq('root_id', rootId).order('created_at')); },
     async addLink(rootId, url, name) { return ok(await sb.from('task_attachments').insert({ root_id: rootId, kind: 'link', url, name: name || url }).select().single()); },
-    async addFile(rootId, file) {
+    async addFile(rootId, original) {
+      const file = await toJpegIfNeeded(original);
       const path = `${rootId}/${Date.now()}-${safeName(file.name)}`;
       ok(await sb.storage.from('anexos').upload(path, file, { contentType: file.type || undefined }));
       return ok(await sb.from('task_attachments').insert({ root_id: rootId, kind: 'file', path, name: file.name }).select().single());
@@ -113,6 +127,26 @@ function supabaseApi() {
     async newApprovalLink(taskId) { return ok(await sb.rpc('new_approval_link', { p_task: taskId })); },
     async confirmSchedule(id, postAt, caption, format) { ok(await sb.rpc('confirm_schedule', { p_id: id, p_post_at: postAt, p_caption: caption, p_format: format || '' })); },
     async unconfirmSchedule(id) { ok(await sb.rpc('unconfirm_schedule', { p_id: id })); },
+    async igAccounts() {
+      const { data, error } = await sb.functions.invoke('ig-accounts', { body: {} });
+      if (error) {
+        let msg = error.message;
+        try { msg = (await error.context.json()).error || msg; } catch { /* */ }
+        if (/Failed to send|not found|404/i.test(msg)) msg = 'A função "ig-accounts" ainda não foi publicada no Supabase.';
+        throw new Error(msg);
+      }
+      return data.accounts || [];
+    },
+    async publishNow(id) {
+      ok(await sb.rpc('publish_now', { p_id: id }));
+      const { data, error } = await sb.functions.invoke('ig-publish', { body: { origem: 'crm' } });
+      if (error) {
+        let msg = error.message;
+        try { msg = (await error.context.json()).error || msg; } catch { /* */ }
+        throw new Error(msg);
+      }
+      return data;
+    },
     async deleteAttachment(id) { ok(await sb.from('task_attachments').delete().eq('id', id)); },
     async pulse(answer) { ok(await sb.from('pulses').insert({ answer })); },
     async pulses(sinceIso) { return ok(await sb.from('pulses').select('*').gte('created_at', sinceIso).order('created_at')); },
@@ -147,7 +181,7 @@ function demoApi() {
   ];
   const clients = [
     { id: 'c1', name: 'Clínica Sorriso', active: true, instagram: 'clinicasorriso' }, { id: 'c2', name: 'Studio Nova', active: true, instagram: 'studionova' },
-    { id: 'c3', name: 'Café Grão', active: true, instagram: 'cafegrao' }, { id: 'c4', name: 'Academia Força', active: true }
+    { id: 'c3', name: 'Café Grão', active: true, instagram: 'cafegrao', ig_user_id: '17841400000000003', ig_username: 'cafegrao' }, { id: 'c4', name: 'Academia Força', active: true }
   ];
   const mk = (title, who, status, prio, extra = {}) => {
     const id = uid();
@@ -291,7 +325,18 @@ function demoApi() {
     async newApprovalLink() { return 'demo'; },
     async confirmSchedule(id, postAt, caption, format) {
       const x = tasks.find((k) => k.id === id);
-      tasks.filter((k) => k.root_id === x.root_id).forEach((k) => Object.assign(k, { post_at: postAt, caption, post_format: format || null, scheduled_at: new Date().toISOString(), scheduled_by: me.id }));
+      const cli = clients.find((c) => c.id === x.client_id);
+      tasks.filter((k) => k.root_id === x.root_id).forEach((k) => Object.assign(k, { post_at: postAt, caption, post_format: format || null, scheduled_at: new Date().toISOString(), scheduled_by: me.id, publish_status: cli?.ig_user_id ? 'fila' : null, publish_error: '' }));
+    },
+    async igAccounts() {
+      await new Promise((r) => setTimeout(r, 500));
+      return [{ id: '17841400000000001', username: 'a2pousada', page: 'A2 Pousada', picture: '' }, { id: '17841400000000002', username: 'fisioclinic', page: 'Fisioclinic', picture: '' }];
+    },
+    async publishNow(id) {
+      const x = tasks.find((k) => k.id === id);
+      const nowIso = new Date().toISOString();
+      tasks.filter((k) => k.root_id === x.root_id).forEach((k) => Object.assign(k, { publish_status: 'publicado', ig_permalink: 'https://www.instagram.com/', published_at: nowIso, stage: 'concluido', stage_at: nowIso }));
+      return { verificados: 1 };
     },
     async unconfirmSchedule(id) {
       const x = tasks.find((k) => k.id === id);

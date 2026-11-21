@@ -33,6 +33,9 @@ create table if not exists public.clients (
 );
 alter table public.clients add column if not exists logo_url text;
 alter table public.clients add column if not exists instagram text;
+-- conta do Instagram usada para publicar (vinculada pelo token do usuário do sistema)
+alter table public.clients add column if not exists ig_user_id  text;
+alter table public.clients add column if not exists ig_username text;
 
 -- ---------- Tarefas ---------------------------------------------------
 create table if not exists public.tasks (
@@ -62,6 +65,15 @@ alter table public.tasks add column if not exists caption      text not null def
 alter table public.tasks add column if not exists post_format  text;
 alter table public.tasks add column if not exists scheduled_at timestamptz;
 alter table public.tasks add column if not exists scheduled_by uuid references public.profiles(id) on delete set null;
+alter table public.tasks add column if not exists publish_status  text;
+alter table public.tasks add column if not exists publish_error   text not null default '';
+alter table public.tasks add column if not exists ig_container_id text;
+alter table public.tasks add column if not exists ig_media_id     text;
+alter table public.tasks add column if not exists ig_permalink    text;
+alter table public.tasks add column if not exists published_at    timestamptz;
+alter table public.tasks drop constraint if exists tasks_publish_status_check;
+alter table public.tasks add constraint tasks_publish_status_check
+  check (publish_status is null or publish_status in ('fila','processando','publicando','publicado','erro'));
 alter table public.tasks drop constraint if exists tasks_post_format_check;
 alter table public.tasks add constraint tasks_post_format_check
   check (post_format is null or post_format in ('feed','carrossel','reels','story'));
@@ -210,6 +222,9 @@ begin
     new.stage := old.stage; new.review_note := old.review_note; new.root_id := old.root_id;
     new.post_at := old.post_at; new.caption := old.caption; new.post_format := old.post_format;
     new.scheduled_at := old.scheduled_at; new.scheduled_by := old.scheduled_by;
+    new.publish_status := old.publish_status; new.publish_error := old.publish_error;
+    new.ig_container_id := old.ig_container_id; new.ig_media_id := old.ig_media_id;
+    new.ig_permalink := old.ig_permalink; new.published_at := old.published_at;
   end if;
 
   -- marcou como finalizada: a peça vai para a revisão interna
@@ -279,7 +294,27 @@ begin
   if p_post_at is null then raise exception 'Informe a data e a hora da postagem'; end if;
   perform set_config('app.bypass', 'on', true);
   update public.tasks set post_at = p_post_at, caption = coalesce(p_caption, ''), post_format = nullif(p_format, ''),
-         scheduled_at = now(), scheduled_by = auth.uid()
+         scheduled_at = now(), scheduled_by = auth.uid(),
+         publish_status = case when exists (select 1 from public.clients c where c.id = t.client_id and c.ig_user_id is not null)
+                               then 'fila' else null end,
+         publish_error = '', ig_container_id = null
+   where root_id = t.root_id;
+end $$;
+
+-- publicar agora / tentar de novo (equipe de revisão)
+create or replace function public.publish_now(p_id uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare t public.tasks;
+begin
+  if not public.is_reviewer() then raise exception 'Sem permissão'; end if;
+  select * into t from public.tasks where id = p_id;
+  if t.stage <> 'agendamento' or t.scheduled_at is null then raise exception 'Confirme o agendamento antes'; end if;
+  if not exists (select 1 from public.clients c where c.id = t.client_id and c.ig_user_id is not null) then
+    raise exception 'Este cliente ainda não tem Instagram vinculado (Equipe → Clientes)';
+  end if;
+  if t.publish_status in ('publicando','publicado') then raise exception 'Este post já está sendo publicado'; end if;
+  perform set_config('app.bypass', 'on', true);
+  update public.tasks set post_at = least(coalesce(post_at, now()), now()), publish_status = 'fila', publish_error = '', ig_container_id = null
    where root_id = t.root_id;
 end $$;
 
@@ -290,7 +325,9 @@ begin
   if not public.is_reviewer() then raise exception 'Sem permissão'; end if;
   select * into t from public.tasks where id = p_id;
   perform set_config('app.bypass', 'on', true);
-  update public.tasks set scheduled_at = null, scheduled_by = null where root_id = t.root_id;
+  if t.publish_status in ('publicando','publicado') then raise exception 'Este post já foi publicado'; end if;
+  update public.tasks set scheduled_at = null, scheduled_by = null, publish_status = null, publish_error = '', ig_container_id = null
+   where root_id = t.root_id;
 end $$;
 
 -- Fluxo: a versão mais recente de cada peça
@@ -563,6 +600,7 @@ grant execute on function public.set_member(uuid, text, text) to authenticated;
 grant execute on function public.review_task(uuid, text, text, text) to authenticated;
 grant execute on function public.confirm_schedule(uuid, timestamptz, text, text) to authenticated;
 grant execute on function public.unconfirm_schedule(uuid) to authenticated;
+grant execute on function public.publish_now(uuid) to authenticated;
 grant select on public.approval_links to authenticated;
 grant execute on function public.new_approval_link(uuid) to authenticated;
 grant usage on schema public to anon;

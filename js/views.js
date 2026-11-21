@@ -473,7 +473,7 @@ export async function viewEquipe(tab = 'pessoas') {
         <div class="list grid-2">${clients.map((c, i) => `<div class="person card rise" style="--i:${i};${c.active ? '' : 'opacity:.45'}">
           <label class="client-logo" title="Enviar logo">${c.logo_url ? `<img src="${esc(c.logo_url)}" alt="">` : I.building}<span>${I.camera}</span>
             <input type="file" accept="image/*" class="sr" data-logo="${c.id}"></label>
-          <span class="info"><b>${esc(c.name)}</b><small>${c.instagram ? `@${esc(c.instagram)}` : 'sem Instagram'} · ${c.active ? 'ativo' : 'arquivado'}</small></span>
+          <span class="info"><b>${esc(c.name)}</b><small>${c.ig_user_id ? `<span class="ig-on">● publica em @${esc(c.ig_username || c.instagram || '')}</span>` : c.instagram ? `@${esc(c.instagram)} · não vinculado` : 'sem Instagram'}${c.active ? '' : ' · arquivado'}</small></span>
           <button class="btn btn-ghost btn-sm" data-ig="${c.id}" aria-label="Instagram de ${esc(c.name)}">${I.insta}</button>
           <button class="btn btn-ghost btn-sm" data-c="${c.id}">${c.active ? 'Arquivar' : 'Reativar'}</button></div>`).join('') || emptyBox('Nenhum cliente ainda.')}</div>`;
       body.querySelectorAll('[data-logo]').forEach((inp) => (inp.onchange = async (e) => {
@@ -494,19 +494,57 @@ export async function viewEquipe(tab = 'pessoas') {
   body.onclick = async (e) => {
     const m = e.target.closest('[data-m]'); if (m) return memberSheet(all.find((p) => p.id === m.dataset.m));
     const ig = e.target.closest('[data-ig]');
-    if (ig) {
-      const cl = clients.find((x) => x.id === ig.dataset.ig);
-      const v = prompt(`@ do Instagram de ${cl.name}:`, cl.instagram ? '@' + cl.instagram : '@');
-      if (v === null) return;
-      const handle = v.trim().replace(/^@+/, '').replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').replace(/[/?].*$/, '');
-      try { await api.updateClient(cl.id, { instagram: handle || null }); toast(handle ? `@${handle} salvo.` : 'Instagram removido.'); viewEquipe('clientes'); } catch (er) { toast(er.message); }
-      return;
-    }
+    if (ig) return igSheet(clients.find((x) => x.id === ig.dataset.ig), clients);
     const c = e.target.closest('[data-c]');
     if (c) { const cl = clients.find((x) => x.id === c.dataset.c); await api.updateClient(cl.id, { active: !cl.active }); viewEquipe('clientes'); }
   };
   show(tab);
   bindCommon();
+}
+
+// Vincular a conta do Instagram que o CRM usa para publicar
+function igSheet(cl, clients) {
+  openSheet(`
+    <div class="sheet-head"><div><small class="muted">Instagram do cliente</small><h2>${esc(cl.name)}</h2></div><button class="icon-btn" data-close aria-label="Fechar">${I.x}</button></div>
+    ${cl.ig_user_id ? `<div class="pub card glow"><div class="pub-h"><b>${I.check} Vinculado para publicar</b></div>
+      <p style="margin-top:8px">@${esc(cl.ig_username || '')} <small class="muted">(ID ${esc(cl.ig_user_id)})</small></p></div>` : ''}
+    <p class="muted" style="font-size:13px;line-height:1.5;margin-bottom:12px">Escolha a conta que o CRM vai usar para publicar. A lista mostra as contas liberadas para o usuário do sistema "CRM Elevate" no Gerenciador de Negócios.</p>
+    <button class="btn btn-white" id="ig-load">${I.insta} Buscar contas liberadas</button>
+    <div class="list" id="ig-list" style="margin-top:12px"></div>
+    <details style="margin-top:16px"><summary class="muted" style="font-size:13px;cursor:pointer">Preencher manualmente</summary>
+      <div class="field" style="margin-top:10px"><label for="ig-id">ID da conta do Instagram</label><input class="input" id="ig-id" inputmode="numeric" value="${esc(cl.ig_user_id || '')}"></div>
+      <div class="field"><label for="ig-user">@ da conta</label><input class="input" id="ig-user" value="${esc(cl.ig_username || cl.instagram || '')}"></div>
+      <button class="btn btn-ghost" id="ig-save">Salvar</button>
+    </details>
+    <div class="err" id="ig-err" style="margin-top:10px"></div>
+    ${cl.ig_user_id ? `<div class="actions"><button class="btn btn-ghost" id="ig-unlink" style="color:var(--red-hi)">Desvincular</button></div>` : ''}`,
+  (root, close) => {
+    const link = async (id, username) => {
+      const clean = (username || '').replace(/^@+/, '').trim();
+      const other = clients.find((x) => x.ig_user_id === id && x.id !== cl.id);
+      if (other && !confirm(`Esta conta já está vinculada a ${other.name}. Vincular também a ${cl.name}?`)) return;
+      await api.updateClient(cl.id, { ig_user_id: id || null, ig_username: clean || null, instagram: clean || cl.instagram || null });
+      close(); toast(id ? `${cl.name} vai publicar em @${clean}.` : 'Instagram desvinculado.'); viewEquipe('clientes');
+    };
+    $('#ig-load', root).onclick = (e) => busy(e.currentTarget, async () => {
+      $('#ig-err', root).textContent = '';
+      try {
+        const accs = await api.igAccounts();
+        $('#ig-list', root).innerHTML = accs.length ? accs.map((a) => `
+          <button class="person card" data-acc="${esc(a.id)}" data-user="${esc(a.username)}">
+            ${a.picture ? `<img src="${esc(a.picture)}" width="40" height="40" alt="" style="object-fit:cover">` : `<span class="client-logo" style="width:40px;height:40px">${I.insta}</span>`}
+            <span class="info"><b>@${esc(a.username)}</b><small>${a.page ? esc(a.page) + ' · ' : ''}ID ${esc(a.id)}</small></span>${cl.ig_user_id === a.id ? `<span class="tag solid">${I.check}</span>` : ''}
+          </button>`).join('') : '<p class="muted" style="font-size:13px">Nenhuma conta liberada ainda. Confira se a conta foi atribuída ao usuário do sistema CRM Elevate.</p>';
+      } catch (er) { $('#ig-err', root).textContent = er.message; }
+    });
+    $('#ig-list', root).onclick = (e) => { const b = e.target.closest('[data-acc]'); if (b) link(b.dataset.acc, b.dataset.user).catch((er) => ($('#ig-err', root).textContent = er.message)); };
+    $('#ig-save', root).onclick = () => {
+      const id = $('#ig-id', root).value.trim();
+      if (id && !/^\d{5,}$/.test(id)) return ($('#ig-err', root).textContent = 'O ID é só números (ex.: 17841400000000000).');
+      link(id, $('#ig-user', root).value).catch((er) => ($('#ig-err', root).textContent = er.message));
+    };
+    const un = $('#ig-unlink', root); if (un) un.onclick = () => link('', '').catch((er) => ($('#ig-err', root).textContent = er.message));
+  });
 }
 
 function memberSheet(p) {

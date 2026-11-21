@@ -5,6 +5,11 @@ import {
 } from './ui.js';
 
 const clientOf = (id) => state.clients.find((c) => c.id === id) || null;
+const PUB = {
+  fila: ['Na fila do Instagram', ''], processando: ['Publicando no Instagram…', ''], publicando: ['Publicando no Instagram…', ''],
+  publicado: ['Publicado no Instagram', 'solid'], erro: ['Erro ao publicar', 'late']
+};
+export const pubTag = (t) => (t.publish_status && PUB[t.publish_status] ? `<span class="tag ${PUB[t.publish_status][1]}">${t.publish_status === 'publicado' ? I.check + ' ' : ''}${PUB[t.publish_status][0]}</span>` : '');
 
 // ---------------------------------------------------------------------
 // Cartão de tarefa (lista do dia)
@@ -41,7 +46,8 @@ export function kCard(t, i = 0) {
     <span class="top-row"><span>${cl ? esc(cl) : 'Sem cliente'}</span><span class="tag p-${t.priority}">${PRIOS[t.priority]}</span></span>
     <h4>${esc(t.title)}</h4>
     ${t.post_format || t.post_at ? `<span class="meta" style="margin-top:6px">${t.post_format ? `<span class="tag">${FORMATS[t.post_format]}</span>` : ''}${t.post_at ? `<span class="tag">${I.calendar}${fmtPost(t.post_at)}</span>` : ''}</span>` : ''}
-    ${t.stage === 'agendamento' ? `<span class="meta" style="margin-top:6px">${t.scheduled_at ? `<span class="tag solid">${I.check} Agendado</span>` : '<span class="tag late">Aguardando confirmação</span>'}</span>` : ''}
+    ${t.stage === 'agendamento' ? `<span class="meta" style="margin-top:6px">${t.scheduled_at ? (pubTag(t) || `<span class="tag solid">${I.check} Agendado</span>`) : '<span class="tag late">Aguardando confirmação</span>'}</span>` : ''}
+    ${t.stage === 'concluido' && t.publish_status === 'publicado' ? `<span class="meta" style="margin-top:6px">${pubTag(t)}</span>` : ''}
     ${t.stage === 'em_alteracao' && t.review_note ? `<p class="note">${esc(t.review_note)}</p>` : ''}
     <span class="foot">${face(p, 22)}<span>${esc(firstName(p.name))}</span><span class="tag ${isLate(t) && t.stage !== 'concluido' ? 'late' : ''}">${I.clock}${ago(t.stage_at)}</span></span>
   </button>`;
@@ -166,13 +172,24 @@ export function taskSheet(t, onDone) {
       <div class="meta">${t.post_format ? `<span class="tag">${FORMATS[t.post_format]}</span>` : ''}${t.post_at ? `<span class="tag">${I.calendar}${fmtPost(t.post_at)}</span>` : ''}${t.scheduled_at ? `<span class="tag solid">${I.check} Agendado</span>` : ''}</div>
       ${t.caption ? `<p class="pub-cap">${esc(t.caption)}</p>` : ''}
     </div>` : '';
+  const doneBlock = t.stage === 'concluido' && t.ig_permalink ? `
+    <div class="pub card glow"><div class="pub-h"><b>${I.check} Publicado no Instagram</b><span class="muted">${t.published_at ? fmtPost(t.published_at) : ''}</span></div>
+      <a class="btn btn-white btn-sm" style="width:100%;margin-top:12px;text-decoration:none" href="${esc(t.ig_permalink)}" target="_blank" rel="noopener">Ver post no Instagram ${I.arrow}</a></div>` : '';
   const schedBlock = rev && t.stage === 'agendamento' ? (t.scheduled_at ? `
     <div class="pub card glow" id="sched">
       <div class="pub-h"><b>${I.check} Agendamento confirmado</b><span class="muted">por ${esc(firstName(person(t.scheduled_by).name))}</span></div>
-      <p style="margin-top:8px;line-height:1.5">${FORMATS[t.post_format] || 'Post'} para <b>${fmtPost(t.post_at)}</b>${cli?.instagram ? ` no <b>@${esc(cli.instagram)}</b>` : ''}.</p>
+      <p style="margin-top:8px;line-height:1.5">${FORMATS[t.post_format] || 'Post'} para <b>${fmtPost(t.post_at)}</b>${cli?.ig_username || cli?.instagram ? ` no <b>@${esc(cli.ig_username || cli.instagram)}</b>` : ''}.</p>
+      <div class="meta">${pubTag(t)}</div>
+      ${t.publish_status === 'erro' ? `<p class="just" style="margin-top:10px;line-height:1.45">${esc(t.publish_error)}</p>` : ''}
+      ${t.publish_status === 'fila' ? `<p class="muted" style="font-size:13px;margin-top:8px;line-height:1.45">O CRM publica sozinho no horário marcado (confere a cada 5 minutos).</p>` : ''}
+      ${!t.publish_status ? `<p class="muted" style="font-size:13px;margin-top:8px;line-height:1.45">${cli?.ig_user_id ? '' : 'Este cliente ainda não tem Instagram vinculado para publicação automática (Equipe → Clientes). Publique manualmente e marque como postado.'}</p>` : ''}
       ${t.caption ? `<p class="pub-cap">${esc(t.caption)}</p>` : ''}
       <div class="err" id="sc-err"></div>
-      <div class="actions" style="margin-top:10px"><button class="btn btn-red" id="posted">Marcar como postado ${I.arrow}</button><button class="btn btn-ghost" id="unsched">Editar agendamento</button></div>
+      <div class="actions" style="margin-top:10px">
+        ${cli?.ig_user_id && t.publish_status !== 'publicando' ? `<button class="btn btn-red" id="pubnow">${t.publish_status === 'erro' ? 'Tentar publicar de novo' : 'Publicar agora'} ${I.arrow}</button>` : ''}
+        <button class="btn ${cli?.ig_user_id ? 'btn-ghost' : 'btn-red'}" id="posted">Marcar como postado manualmente</button>
+        <button class="btn btn-ghost" id="unsched">Editar agendamento</button>
+      </div>
     </div>` : `
     <div class="pub card glow" id="sched">
       <div class="pub-h"><b>${I.calendar} Confirmar agendamento nas redes</b></div>
@@ -197,7 +214,7 @@ export function taskSheet(t, onDone) {
     ${t.description ? `<p style="line-height:1.5;margin-bottom:16px;color:#cfcfcf;white-space:pre-wrap">${esc(t.description)}</p>` : ''}
     ${t.review_note && ['em_alteracao'].includes(t.stage) ? `<p class="just alt" style="border-left:2px solid var(--white);padding-left:10px;margin-bottom:16px;line-height:1.5"><b>Ajuste pedido:</b> ${esc(t.review_note)}</p>` : ''}
     ${!mine ? `<div class="person card" style="margin-bottom:16px">${face(p, 36)}<span class="info"><b>${esc(p.name)}</b><small>${ROLES[p.role]}</small></span></div>` : ''}
-    ${schedBlock || pubInfo}
+    ${doneBlock}${schedBlock || pubInfo}
 
     ${rev && flowActions.length ? `
     <div class="section-title" style="margin-top:8px"><h2>Fluxo de conteúdo</h2><span>${STAGE[t.stage]}</span></div>
@@ -236,8 +253,26 @@ export function taskSheet(t, onDone) {
       if (!scFmt) return ($('#sc-err', root).textContent = 'Escolha o formato.');
       if (!at) return ($('#sc-err', root).textContent = 'Informe a data e a hora da postagem.');
       busy(scOk, async () => {
-        try { await api.confirmSchedule(t.id, fromLocalInput(at), $('#sc-cap', root).value.trim(), scFmt); close(); toast(`Agendamento confirmado para ${fmtPost(fromLocalInput(at))}.`); done(); }
+        try {
+          await api.confirmSchedule(t.id, fromLocalInput(at), $('#sc-cap', root).value.trim(), scFmt); close();
+          toast(cli?.ig_user_id ? `Na fila: publica sozinho em ${fmtPost(fromLocalInput(at))}.` : `Agendamento confirmado para ${fmtPost(fromLocalInput(at))}.`); done();
+        }
         catch (er) { $('#sc-err', root).textContent = er.message; }
+      });
+    };
+    const pubnow = $('#pubnow', root);
+    if (pubnow) pubnow.onclick = () => {
+      if (!confirm('Publicar este post agora no Instagram do cliente?')) return;
+      busy(pubnow, async () => {
+        try {
+          const r = await api.publishNow(t.id);
+          const res = r?.results?.[0];
+          close();
+          if (res?.resultado === 'erro') toast('Não foi possível publicar: ' + res.erro);
+          else if (res?.resultado === 'aguardando') toast('O Instagram está processando o vídeo. Publica em alguns minutos.');
+          else toast('Publicado no Instagram!');
+          done();
+        } catch (er) { $('#sc-err', root).textContent = er.message; }
       });
     };
     const posted = $('#posted', root);

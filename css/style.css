@@ -414,6 +414,8 @@ body.is-dragging .chips button.drop-on { border-style: solid; }
 .kcard .tag svg { width: 10px; height: 10px; }
 #sc-fmt button, #tf-fmt button { font-size: 12px; padding: 0 4px; }
 
+.ig-on { color: var(--white); }
+
 /* ---------- Link de aprovação ---------- */
 .appr { padding: 16px; margin-top: 16px; }
 .appr b { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; }

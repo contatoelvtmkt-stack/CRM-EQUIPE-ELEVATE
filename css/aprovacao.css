@@ -1,0 +1,87 @@
+/* Página pública de aprovação do cliente */
+.ap { position: relative; z-index: 1; max-width: 1180px; margin: 0 auto; padding: 18px var(--gutter) calc(32px + var(--safe-b)); min-height: 100dvh; }
+.ap-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 6px 0 20px; border-bottom: 1px solid var(--line); }
+.ap-brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.ap-logo { width: 56px; height: 56px; flex: none; display: grid; place-items: center; background: var(--white); color: var(--black); overflow: hidden; box-shadow: 0 0 0 1px var(--line-hi), 0 10px 30px rgba(204,0,0,.2); }
+.ap-logo img { width: 100%; height: 100%; object-fit: cover; }
+.ap-logo b { font-size: 20px; font-weight: 500; }
+.ap-brand small { display: block; font-size: 12px; color: var(--red-hi); letter-spacing: .08em; text-transform: uppercase; }
+.ap-brand h1 { font-size: 22px; font-weight: 500; line-height: 1.15; letter-spacing: -.3px; overflow: hidden; text-overflow: ellipsis; }
+.ap-by { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); flex: none; }
+.ap-by img { width: 64px; }
+
+.ap-grid { display: grid; gap: 16px; margin-top: 18px; }
+.ap-main { display: grid; gap: 12px; min-width: 0; }
+.ap-main:empty { display: none; }
+.ap-side { display: grid; gap: 12px; align-content: start; }
+
+/* carrossel das artes */
+.ap-carousel { position: relative; background: #101010; border: 1px solid var(--line); box-shadow: 0 20px 60px rgba(0,0,0,.45); }
+.ap-track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
+.ap-track::-webkit-scrollbar { display: none; }
+.ap-track figure { flex: 0 0 100%; scroll-snap-align: center; aspect-ratio: 4 / 5; display: grid; place-items: center; background: #0d0d0d; }
+.ap-track img { width: 100%; height: 100%; object-fit: contain; }
+.ap-nav { position: absolute; top: 50%; translate: 0 -50%; width: 42px; height: 42px; display: grid; place-items: center; background: rgba(24,24,24,.8); border: 1px solid var(--line-hi); backdrop-filter: blur(6px); transition: .2s; }
+.ap-nav:hover { border-color: var(--red); background: var(--red); }
+.ap-nav svg { width: 18px; height: 18px; }
+.ap-nav.prev { left: 10px; } .ap-nav.next { right: 10px; }
+.ap-dots { position: absolute; left: 0; right: 0; bottom: 12px; display: flex; justify-content: center; gap: 6px; }
+.ap-dots i { width: 18px; height: 3px; background: rgba(229,229,229,.35); cursor: pointer; transition: .25s; }
+.ap-dots i.on { width: 30px; background: var(--red); box-shadow: 0 0 10px var(--red); }
+.ap-count { position: absolute; top: 12px; right: 12px; font-size: 12px; padding: 4px 8px; background: rgba(24,24,24,.8); border: 1px solid var(--line-hi); }
+
+.ap-video video { display: block; width: 100%; max-height: 78vh; background: #000; border: 1px solid var(--line); }
+.ap-files { display: grid; gap: 8px; }
+.ap-file { display: flex; align-items: center; gap: 12px; padding: 14px; text-decoration: none; transition: .2s; }
+.ap-file:hover { border-color: var(--red); transform: translateY(-1px); }
+.ap-file-ic { width: 42px; height: 42px; flex: none; display: grid; place-items: center; background: var(--red); box-shadow: 0 0 18px var(--red-glow); }
+.ap-file-ic svg { width: 20px; height: 20px; color: #fff; }
+.ap-file-n { flex: 1; min-width: 0; }
+.ap-file-n b { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ap-file-n small { color: var(--muted); font-size: 12px; }
+.ap-file > svg { width: 18px; height: 18px; color: var(--muted); flex: none; }
+.ap-pdf { display: none; }
+.ap-pdf iframe { width: 100%; height: 75vh; border: 1px solid var(--line); background: #fff; }
+
+.ap-info { padding: 20px; }
+.ap-info .tag svg { width: 12px; height: 12px; }
+.ap-info h2 { font-size: 24px; font-weight: 500; line-height: 1.2; margin-top: 14px; letter-spacing: -.4px; }
+.ap-desc { margin-top: 12px; color: #cfcfcf; line-height: 1.55; white-space: pre-wrap; }
+.ap-due { margin-top: 14px; font-size: 13px; color: var(--muted); }
+.ap-due b { color: var(--white); }
+
+.ap-decide { padding: 4px 0; }
+.ap-q { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+.ap-btns { display: grid; grid-template-columns: 1fr 1.3fr; gap: 8px; }
+.ap-btns .btn { height: 56px; }
+.ap-change, .ap-confirm { padding: 16px; display: grid; gap: 10px; }
+.ap-change label b { font-weight: 500; }
+.ap-confirm p { line-height: 1.5; }
+.ap-thumbs { display: flex; gap: 8px; flex-wrap: wrap; }
+.ap-thumbs:empty { display: none; }
+.ap-thumbs span { position: relative; width: 64px; height: 64px; }
+.ap-thumbs img { width: 100%; height: 100%; object-fit: cover; border: 1px solid var(--line-hi); }
+.ap-thumbs button { position: absolute; top: -6px; right: -6px; width: 22px; height: 22px; display: grid; place-items: center; background: var(--red); }
+.ap-thumbs button svg { width: 12px; height: 12px; color: #fff; }
+
+.ap-done { min-height: 60vh; display: grid; place-content: center; justify-items: center; text-align: center; gap: 10px; padding: 40px 0; }
+.ap-done-ic { width: 84px; height: 84px; display: grid; place-items: center; background: var(--s2); border: 1px solid var(--line-hi); margin-bottom: 10px; }
+.ap-done-ic svg { width: 38px; height: 38px; color: var(--muted); }
+.ap-done-ic.ok { background: var(--red); border-color: var(--red); box-shadow: 0 0 0 10px rgba(204,0,0,.12), 0 0 60px var(--red-glow); animation: pop .5s var(--ease); }
+.ap-done-ic.ok svg { color: #fff; }
+.ap-done h2 { font-size: 32px; font-weight: 500; letter-spacing: -.8px; }
+.ap-done p { color: #bdbdbd; max-width: 420px; line-height: 1.55; }
+.ap-done .ap-done-t { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 12px; margin-top: 6px; }
+.ap .toast { bottom: 24px; }
+
+@media (min-width: 900px) {
+  .ap { padding: 28px 40px 48px; }
+  .ap-brand h1 { font-size: 28px; }
+  .ap-logo { width: 64px; height: 64px; }
+  .ap-by img { width: 84px; }
+  .ap-grid { grid-template-columns: minmax(0, 1.25fr) minmax(320px, .75fr); gap: 28px; align-items: start; margin-top: 28px; }
+  .ap-grid:has(.ap-main:empty) { grid-template-columns: minmax(0, 640px); justify-content: center; }
+  .ap-side { position: sticky; top: 24px; }
+  .ap-track figure { aspect-ratio: 1 / 1; max-height: 78vh; }
+  .ap-pdf.d-only-block { display: block; }
+}

@@ -98,7 +98,19 @@ function supabaseApi() {
       ok(await sb.storage.from('anexos').upload(path, file, { contentType: file.type || undefined }));
       return ok(await sb.from('task_attachments').insert({ root_id: rootId, kind: 'file', path, name: file.name }).select().single());
     },
-    async fileUrl(path) { return ok(await sb.storage.from('anexos').createSignedUrl(path, 3600)).signedUrl; },
+    async fileUrl(path) { return sb.storage.from('anexos').getPublicUrl(path).data.publicUrl; },
+    async uploadClientLogo(clientId, file) {
+      const blob = await squareImage(file, 300);
+      const path = `logos/${clientId}-${Date.now()}.jpg`;
+      ok(await sb.storage.from('anexos').upload(path, blob, { contentType: 'image/jpeg' }));
+      const url = sb.storage.from('anexos').getPublicUrl(path).data.publicUrl;
+      return ok(await sb.from('clients').update({ logo_url: url }).eq('id', clientId).select().single());
+    },
+    async approvalLink(rootId) {
+      const d = ok(await sb.from('approval_links').select('*').eq('root_id', rootId).order('created_at', { ascending: false }).limit(1));
+      return d[0] || null;
+    },
+    async newApprovalLink(taskId) { return ok(await sb.rpc('new_approval_link', { p_task: taskId })); },
     async deleteAttachment(id) { ok(await sb.from('task_attachments').delete().eq('id', id)); },
     async pulse(answer) { ok(await sb.from('pulses').insert({ answer })); },
     async pulses(sinceIso) { return ok(await sb.from('pulses').select('*').gte('created_at', sinceIso).order('created_at')); },
@@ -264,6 +276,17 @@ function demoApi() {
     async addLink(rootId, url, name) { const a = { id: uid(), root_id: rootId, kind: 'link', url, name: name || url, created_by: me.id }; attachments.push(a); return wait(a); },
     async addFile(rootId, file) { const a = { id: uid(), root_id: rootId, kind: 'file', path: URL.createObjectURL(file), name: file.name, created_by: me.id }; attachments.push(a); return wait(a); },
     async fileUrl(path) { return path; },
+    async uploadClientLogo(clientId, file) {
+      const blob = await squareImage(file, 300);
+      const c = clients.find((k) => k.id === clientId);
+      c.logo_url = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+      return wait(c);
+    },
+    async approvalLink(rootId) {
+      const x = latest().find((k) => k.root_id === rootId);
+      return x && x.stage === 'revisao_cliente' ? { token: 'demo', root_id: rootId, created_at: x.stage_at, expires_at: new Date(Date.now() + 6 * 86400e3).toISOString(), used_at: null } : null;
+    },
+    async newApprovalLink() { return 'demo'; },
     async deleteAttachment(id) { attachments.splice(attachments.findIndex((a) => a.id === id), 1); },
     async pulse(answer) { pulses.push({ id: uid(), user_id: me.id, answer, created_at: new Date().toISOString() }); },
     async pulses(since) { return wait(pulses.filter((p) => p.created_at >= since && (isMgr() || p.user_id === me.id))); },

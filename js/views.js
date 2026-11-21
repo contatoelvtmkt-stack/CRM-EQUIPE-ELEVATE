@@ -471,9 +471,15 @@ export async function viewEquipe(tab = 'pessoas') {
           <button class="btn btn-red" style="width:auto">${I.plus} Adicionar</button>
         </form>
         <div class="list grid-2">${clients.map((c, i) => `<div class="person card rise" style="--i:${i};${c.active ? '' : 'opacity:.45'}">
-          <span class="icon-btn" style="width:40px;height:40px">${I.building}</span>
-          <span class="info"><b>${esc(c.name)}</b><small>${c.active ? 'Ativo' : 'Arquivado'}</small></span>
+          <label class="client-logo" title="Enviar logo">${c.logo_url ? `<img src="${esc(c.logo_url)}" alt="">` : I.building}<span>${I.camera}</span>
+            <input type="file" accept="image/*" class="sr" data-logo="${c.id}"></label>
+          <span class="info"><b>${esc(c.name)}</b><small>${c.active ? 'Ativo' : 'Arquivado'} · ${c.logo_url ? 'logo enviada' : 'toque para enviar a logo'}</small></span>
           <button class="btn btn-ghost btn-sm" data-c="${c.id}">${c.active ? 'Arquivar' : 'Reativar'}</button></div>`).join('') || emptyBox('Nenhum cliente ainda.')}</div>`;
+      body.querySelectorAll('[data-logo]').forEach((inp) => (inp.onchange = async (e) => {
+        const file = e.target.files[0]; if (!file) return;
+        toast('Enviando logo…');
+        try { await api.uploadClientLogo(inp.dataset.logo, file); toast('Logo atualizada!'); viewEquipe('clientes'); } catch (er) { toast(er.message); }
+      }));
       $('#cl-form').onsubmit = async (e) => {
         e.preventDefault();
         const name = e.target.name.value.trim(); if (!name) return;

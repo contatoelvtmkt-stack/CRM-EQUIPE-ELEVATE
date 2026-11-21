@@ -31,6 +31,7 @@ create table if not exists public.clients (
   active     boolean not null default true,
   created_at timestamptz not null default now()
 );
+alter table public.clients add column if not exists logo_url text;
 
 -- ---------- Tarefas ---------------------------------------------------
 create table if not exists public.tasks (
@@ -233,17 +234,7 @@ begin
   if not found then raise exception 'Tarefa não encontrada'; end if;
 
   if p_action = 'alterar' then
-    if t.task_date = d and t.status <> 'finalizada' then
-      update public.tasks set status = 'em_alteracao', stage = 'em_alteracao', review_note = coalesce(p_note,''),
-             stage_at = now(), completed_at = null where id = t.id;
-    else
-      -- a peça volta para a lista de hoje de quem fez, com o pedido de ajuste
-      insert into public.tasks (title, description, priority, task_date, due_date, assigned_to, created_by,
-                                status, justification, client_id, stage, root_id, review_note, stage_at)
-      values (t.title, t.description, t.priority, d, greatest(t.due_date, d), t.assigned_to, auth.uid(),
-              'em_alteracao', '', t.client_id, 'em_alteracao', t.root_id, coalesce(p_note,''), now());
-      update public.tasks set stage = 'em_alteracao', stage_at = now() where id = t.id;
-    end if;
+    perform public._request_change(t.id, p_note, auth.uid());
     return;
   end if;
 
@@ -316,6 +307,135 @@ begin
   update public.profiles set name = p_name, role = p_role where id = p_id;
 end $$;
 
+
+-- ---------- Aprovação do cliente: links temporários ---------------------
+create table if not exists public.approval_links (
+  token      text primary key default replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''),
+  root_id    uuid not null,
+  created_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null default now() + interval '7 days',
+  used_at    timestamptz,
+  decision   text check (decision in ('aprovado','alteracao')),
+  note       text not null default ''
+);
+create index if not exists approval_links_root on public.approval_links (root_id, created_at desc);
+
+-- versão mais recente da peça
+create or replace function public.latest_task(p_root uuid) returns public.tasks
+language sql stable security definer set search_path = public as $$
+  select * from public.tasks where root_id = p_root order by created_at desc limit 1
+$$;
+
+-- pedido de alteração (usado pela revisão interna e pelo cliente)
+create or replace function public._request_change(p_id uuid, p_note text, p_by uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare t public.tasks; d date := public.today_br();
+begin
+  perform set_config('app.bypass', 'on', true);
+  select * into t from public.tasks where id = p_id;
+  if t.task_date = d and t.status <> 'finalizada' then
+    update public.tasks set status = 'em_alteracao', stage = 'em_alteracao', review_note = coalesce(p_note,''),
+           stage_at = now(), completed_at = null where id = t.id;
+  else
+    insert into public.tasks (title, description, priority, task_date, due_date, assigned_to, created_by,
+                              status, justification, client_id, stage, root_id, review_note, stage_at)
+    values (t.title, t.description, t.priority, d, greatest(t.due_date, d), t.assigned_to, coalesce(p_by, t.created_by),
+            'em_alteracao', '', t.client_id, 'em_alteracao', t.root_id, coalesce(p_note,''), now());
+    update public.tasks set stage = 'em_alteracao', stage_at = now() where id = t.id;
+  end if;
+end $$;
+
+-- cria um link novo (e encerra os anteriores da mesma peça)
+create or replace function public._new_approval_link(p_root uuid, p_by uuid) returns text
+language plpgsql security definer set search_path = public as $$
+declare tok text;
+begin
+  update public.approval_links set expires_at = least(expires_at, now())
+   where root_id = p_root and used_at is null and expires_at > now();
+  insert into public.approval_links (root_id, created_by) values (p_root, p_by) returning token into tok;
+  return tok;
+end $$;
+
+-- ao entrar em "Revisão do cliente", o link é criado sozinho
+create or replace function public.on_stage_change() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.stage = 'revisao_cliente' and (tg_op = 'INSERT' or old.stage is distinct from 'revisao_cliente') then
+    perform public._new_approval_link(new.root_id, auth.uid());
+  end if;
+  return null;
+end $$;
+drop trigger if exists on_stage_change on public.tasks;
+create trigger on_stage_change after insert or update of stage on public.tasks
+  for each row execute function public.on_stage_change();
+
+-- equipe: gerar um link novo manualmente
+create or replace function public.new_approval_link(p_task uuid) returns text
+language plpgsql security definer set search_path = public as $$
+declare t public.tasks;
+begin
+  if not public.is_reviewer() then raise exception 'Sem permissão'; end if;
+  select * into t from public.tasks where id = p_task;
+  if t.stage <> 'revisao_cliente' then raise exception 'A tarefa precisa estar em Revisão do cliente'; end if;
+  return public._new_approval_link(t.root_id, auth.uid());
+end $$;
+
+-- link válido? (aberto, dentro do prazo e a peça ainda em Revisão do cliente)
+create or replace function public.approval_token_ok(p_token text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.approval_links l
+                  where l.token = p_token and l.used_at is null and l.expires_at > now()
+                    and (public.latest_task(l.root_id)).stage = 'revisao_cliente')
+$$;
+
+-- PÚBLICO (cliente sem login): ver o conteúdo do link
+create or replace function public.get_approval(p_token text) returns json
+language plpgsql stable security definer set search_path = public as $$
+declare l public.approval_links; t public.tasks; c public.clients; st text;
+begin
+  select * into l from public.approval_links where token = p_token;
+  if not found then return json_build_object('state', 'invalido'); end if;
+  t := public.latest_task(l.root_id);
+  select * into c from public.clients where id = t.client_id;
+  st := case when l.used_at is not null then 'respondido'
+             when l.expires_at <= now() then 'expirado'
+             when t.stage <> 'revisao_cliente' then 'encerrado'
+             else 'aberto' end;
+  return json_build_object(
+    'state', st, 'decision', l.decision, 'expires_at', l.expires_at,
+    'title', t.title, 'description', t.description, 'due_date', t.due_date,
+    'client', json_build_object('name', coalesce(c.name, ''), 'logo_url', c.logo_url),
+    'files', coalesce((select json_agg(json_build_object('kind', a.kind, 'name', a.name, 'url', a.url, 'path', a.path) order by a.created_at)
+                         from public.task_attachments a where a.root_id = l.root_id and a.name not like 'Cliente – %'), '[]'::json));
+end $$;
+
+-- PÚBLICO: resposta do cliente
+create or replace function public.submit_approval(p_token text, p_decision text, p_note text default '', p_files json default '[]')
+returns json language plpgsql security definer set search_path = public as $$
+declare l public.approval_links; t public.tasks; f json;
+begin
+  if not public.approval_token_ok(p_token) then raise exception 'Este link não está mais disponível.'; end if;
+  if p_decision not in ('aprovado','alteracao') then raise exception 'Resposta inválida'; end if;
+  if p_decision = 'alteracao' and coalesce(trim(p_note), '') = '' then raise exception 'Descreva a alteração.'; end if;
+  select * into l from public.approval_links where token = p_token for update;
+  t := public.latest_task(l.root_id);
+  perform set_config('app.bypass', 'on', true);
+  update public.approval_links set used_at = now(), decision = p_decision, note = coalesce(p_note, '') where token = p_token;
+  for f in select * from json_array_elements(coalesce(p_files, '[]'::json)) loop
+    if (f->>'path') like 'cliente/' || p_token || '/%' then
+      insert into public.task_attachments (root_id, kind, path, name, created_by)
+      values (l.root_id, 'file', f->>'path', 'Cliente – ' || coalesce(f->>'name', 'arquivo'), null);
+    end if;
+  end loop;
+  if p_decision = 'aprovado' then
+    update public.tasks set stage = 'agendamento', stage_at = now() where id = t.id;
+  else
+    perform public._request_change(t.id, 'Cliente: ' || trim(p_note), null);
+  end if;
+  return json_build_object('ok', true);
+end $$;
+
 -- ---------- Segurança (RLS) ---------------------------------------------
 alter table public.profiles         enable row level security;
 alter table public.tasks            enable row level security;
@@ -350,10 +470,17 @@ create policy "apagar tarefas" on public.tasks for delete to authenticated
 drop policy if exists "ver estrelas" on public.star_days;
 create policy "ver estrelas" on public.star_days for select to authenticated using (public.is_member());
 
+alter table public.approval_links enable row level security;
+drop policy if exists "ver links" on public.approval_links;
+create policy "ver links" on public.approval_links for select to authenticated using (public.is_reviewer());
+
 drop policy if exists "ver clientes" on public.clients;
 create policy "ver clientes" on public.clients for select to authenticated using (public.is_member());
 drop policy if exists "gerir clientes" on public.clients;
-create policy "gerir clientes" on public.clients for all to authenticated
+drop policy if exists "criar clientes" on public.clients;
+create policy "criar clientes" on public.clients for insert to authenticated with check (public.is_member());
+drop policy if exists "editar clientes" on public.clients;
+create policy "editar clientes" on public.clients for update to authenticated
   using (public.is_manager()) with check (public.is_manager());
 
 -- anexos: quem vê a peça vê os anexos
@@ -392,13 +519,23 @@ grant select on public.star_days, public.pipeline to authenticated;
 grant execute on function public.daily_rollover() to authenticated;
 grant execute on function public.set_member(uuid, text, text) to authenticated;
 grant execute on function public.review_task(uuid, text, text, text) to authenticated;
+grant select on public.approval_links to authenticated;
+grant execute on function public.new_approval_link(uuid) to authenticated;
+grant usage on schema public to anon;
+grant execute on function public.get_approval(text) to anon, authenticated;
+grant execute on function public.approval_token_ok(text) to anon, authenticated;
+grant execute on function public.submit_approval(text, text, text, json) to anon, authenticated;
+revoke execute on function public._request_change(uuid, text, uuid) from public, anon, authenticated;
+revoke execute on function public._new_approval_link(uuid, uuid) from public, anon, authenticated;
 
 -- ---------- Arquivos: fotos de perfil e anexos (Supabase Storage) --------
 do $$
 begin
   if exists (select 1 from information_schema.tables where table_schema = 'storage' and table_name = 'buckets') then
     insert into storage.buckets (id, name, public) values ('avatars', 'avatars', true)  on conflict (id) do nothing;
-    insert into storage.buckets (id, name, public) values ('anexos',  'anexos',  false) on conflict (id) do nothing;
+    insert into storage.buckets (id, name, public) values ('anexos',  'anexos',  true)  on conflict (id) do nothing;
+    -- o cliente precisa ver as imagens/vídeos pelo link; os caminhos têm códigos aleatórios
+    update storage.buckets set public = true where id = 'anexos';
 
     drop policy if exists "fotos: enviar a propria" on storage.objects;
     create policy "fotos: enviar a propria" on storage.objects for insert to authenticated
@@ -409,6 +546,10 @@ begin
     drop policy if exists "anexos: equipe envia" on storage.objects;
     create policy "anexos: equipe envia" on storage.objects for insert to authenticated
       with check (bucket_id = 'anexos' and public.is_member());
+    drop policy if exists "anexos: cliente envia" on storage.objects;
+    create policy "anexos: cliente envia" on storage.objects for insert to anon
+      with check (bucket_id = 'anexos' and (storage.foldername(name))[1] = 'cliente'
+                  and public.approval_token_ok((storage.foldername(name))[2]));
     drop policy if exists "anexos: equipe abre" on storage.objects;
     create policy "anexos: equipe abre" on storage.objects for select to authenticated
       using (bucket_id = 'anexos' and public.is_member());

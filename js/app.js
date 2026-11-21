@@ -197,7 +197,7 @@ const SLIDES = [
     p: 'O que não foi finalizado volta sozinho no dia seguinte. Se a revisão pedir ajuste, a peça volta como "em alteração".',
     art: () => `<div class="mock">
       ${taskCard(fakeTask({ id: 'c', title: 'Logo da campanha de verão', priority: 'alta', status: 'em_alteracao', review_note: 'Cliente pediu o vermelho mais escuro.' }))}
-      <img src="assets/img/seta.svg" alt="" style="width:18px;justify-self:center;margin:6px 0;transform:rotate(225deg)">
+      <img src="assets/img/seta.svg" alt="" style="width:14px;justify-self:center;margin:6px 0">
       <div class="card-w"><b>A fazer → Revisão interna → Cliente → Agendamento → Concluído</b></div>
     </div>`
   },
@@ -226,8 +226,8 @@ function showOnboarding() {
         <button data-skip>Pular</button>
       </div>
       <div class="onb-slide">
-        <h2>${s.h}</h2><p>${s.p}</p>
-        <div class="onb-art">${s.art()}</div>
+        <div class="onb-text"><h2>${s.h}</h2><p>${s.p}</p></div>
+        <div class="onb-art"><div class="onb-art-in">${s.art()}</div></div>
       </div>
       <div class="onb-foot" style="${i === 0 ? 'grid-template-columns:1fr' : ''}">
         ${i ? `<button class="back" data-back aria-label="Voltar">${I.back}</button>` : ''}

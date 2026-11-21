@@ -95,6 +95,43 @@ const attachmentsHtml = () => `
   </div>`;
 
 // ---------------------------------------------------------------------
+// Link temporário para o cliente aprovar
+// ---------------------------------------------------------------------
+export const approvalUrl = (token) => `${location.origin}${location.pathname.replace(/[^/]*$/, '')}aprovacao.html?t=${token}${api.demo ? '&demo' : ''}`;
+
+async function approvalBlock(root, t) {
+  const box = $('#appr', root);
+  const draw = (l) => {
+    const valid = l && !l.used_at && new Date(l.expires_at) > new Date();
+    const url = valid ? approvalUrl(l.token) : '';
+    const days = valid ? Math.max(1, Math.ceil((new Date(l.expires_at) - Date.now()) / 86400e3)) : 0;
+    const cl = clientName(t.client_id);
+    const msg = `Olá! Segue o conteúdo "${t.title}" para sua aprovação: ${url}`;
+    box.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${I.link} Link de aprovação do cliente</b>${valid ? `<span class="tag solid">expira em ${days} dia${days > 1 ? 's' : ''}</span>` : ''}</div>
+      ${valid ? `<p class="muted" style="font-size:13px;margin:8px 0 10px;line-height:1.45">Envie para ${cl ? esc(cl) : 'o cliente'}. Ele vê o conteúdo e responde <b>Aprovado</b> ou <b>Alteração</b>, sem precisar de cadastro.</p>
+        <input class="input" readonly value="${esc(url)}" id="appr-url" style="font-size:13px;height:44px">
+        <div class="att-add" style="grid-template-columns:1fr 1fr 1fr">
+          <button class="btn btn-white btn-sm" id="appr-copy" style="width:100%">Copiar</button>
+          <a class="btn btn-ghost btn-sm" style="width:100%;text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(msg)}">WhatsApp</a>
+          <a class="btn btn-ghost btn-sm" style="width:100%;text-decoration:none" target="_blank" rel="noopener" href="${esc(url)}">Abrir</a>
+        </div>`
+      : `<p class="muted" style="font-size:13px;margin:8px 0 10px">${l?.used_at ? 'O cliente já respondeu este link.' : 'O link expirou ou ainda não foi criado.'}</p>`}
+      <button class="btn btn-ghost btn-sm" id="appr-new" style="width:100%;margin-top:6px">Gerar novo link</button>`;
+    const cp = $('#appr-copy', box);
+    if (cp) cp.onclick = async () => {
+      try { await navigator.clipboard.writeText(url); } catch { $('#appr-url', box).select(); document.execCommand('copy'); }
+      toast('Link copiado!');
+    };
+    $('#appr-new', box).onclick = (e) => busy(e.currentTarget, async () => {
+      try { await api.newApprovalLink(t.id); draw(await api.approvalLink(t.root_id || t.id)); toast('Novo link gerado. O anterior deixou de funcionar.'); }
+      catch (er) { toast(er.message); }
+    });
+  };
+  try { draw(await api.approvalLink(t.root_id || t.id)); } catch (er) { box.innerHTML = `<p class="err">${esc(er.message)}</p>`; }
+}
+
+// ---------------------------------------------------------------------
 // Detalhe da tarefa: status do dia + ações do fluxo + anexos
 // ---------------------------------------------------------------------
 export function taskSheet(t, onDone) {
@@ -150,6 +187,8 @@ export function taskSheet(t, onDone) {
     <div class="err" id="ts-err"></div>
     <div class="actions" style="margin-top:4px"><button class="btn btn-red" id="save">Salvar status ${I.arrow}</button></div>` : ''}
 
+    ${rev && t.stage === 'revisao_cliente' ? `<div class="appr card glow" id="appr"><p class="muted" style="font-size:13px">Carregando link do cliente…</p></div>` : ''}
+
     <div style="margin-top:22px">${attachmentsHtml()}</div>
 
     <div class="actions">
@@ -158,6 +197,7 @@ export function taskSheet(t, onDone) {
     </div>`,
   (root, close) => {
     attachmentsBlock(root, t.root_id || t.id);
+    if ($('#appr', root)) approvalBlock(root, t);
     const so = $('#so', root);
     if (so) {
       so.onclick = (e) => {
@@ -226,7 +266,12 @@ export function newTaskSheet(pre = {}, onDone) {
       <div class="field"><label for="tf-title">O que precisa ser feito?</label><input class="input" id="tf-title" name="title" required maxlength="140" value="${esc(t.title)}" placeholder="Ex.: Carrossel de dezembro"></div>
       <div class="field"><label for="tf-client">Cliente</label>
         <select class="input" id="tf-client" name="client_id"><option value="">Sem cliente / interno</option>
-          ${activeClients.map((c) => `<option value="${c.id}" ${t.client_id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}</select></div>
+          ${activeClients.map((c) => `<option value="${c.id}" ${t.client_id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+          <option value="__novo">+ Novo cliente…</option></select>
+        <div class="hidden" id="nc" style="display:grid;grid-template-columns:1fr auto;gap:8px">
+          <input class="input" id="nc-name" placeholder="Nome do novo cliente" maxlength="80">
+          <button type="button" class="btn btn-red" id="nc-ok" style="width:auto">Criar</button>
+        </div></div>
       <div class="field"><label for="tf-desc">Detalhes (opcional)</label><textarea class="input" id="tf-desc" name="description" maxlength="2000">${esc(t.description)}</textarea></div>
       <div class="field"><label>Prioridade</label>
         <div class="seg" id="prio">${Object.entries(PRIOS).map(([k, v]) => `<button type="button" data-v="${k}" class="${t.priority === k ? 'on' : ''}">${v}</button>`).join('')}</div></div>
@@ -252,6 +297,28 @@ export function newTaskSheet(pre = {}, onDone) {
     seg.onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b) return; t.priority = b.dataset.v; seg.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); };
     const who = $('#who', root);
     if (who) who.onclick = (e) => { const b = e.target.closest('[data-p]'); if (!b) return; t.assigned_to = b.dataset.p; who.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); };
+    const sel = $('#tf-client', root), nc = $('#nc', root);
+    let lastClient = sel.value;
+    sel.onchange = () => {
+      if (sel.value === '__novo') { nc.classList.remove('hidden'); $('#nc-name', root).focus(); sel.value = lastClient; }
+      else { lastClient = sel.value; nc.classList.add('hidden'); }
+    };
+    const createClient = (e) => {
+      const name = $('#nc-name', root).value.trim();
+      if (!name) return $('#nc-name', root).focus();
+      busy($('#nc-ok', root), async () => {
+        try {
+          const c = await api.createClient(name);
+          state.clients.push(c); state.clients.sort((a, b) => a.name.localeCompare(b.name));
+          const o = new Option(c.name, c.id, true, true);
+          sel.insertBefore(o, sel.querySelector('[value="__novo"]'));
+          lastClient = c.id; nc.classList.add('hidden'); $('#nc-name', root).value = '';
+          toast(`${c.name} adicionado aos clientes.`);
+        } catch (er) { toast(er.message); }
+      });
+    };
+    $('#nc-ok', root).onclick = createClient;
+    $('#nc-name', root).onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); createClient(); } };
     const td = root.querySelector('[name=task_date]'), dd = root.querySelector('[name=due_date]');
     td.onchange = () => { if (dd.value < td.value) dd.value = td.value; };
     const drawQ = () => {
@@ -273,7 +340,7 @@ export function newTaskSheet(pre = {}, onDone) {
       if (f.due_date < f.task_date) return ($('#tf-err', root).textContent = 'O prazo não pode ser antes da data da demanda.');
       const payload = {
         title: f.title.trim(), description: f.description.trim(), priority: t.priority, task_date: f.task_date, due_date: f.due_date,
-        assigned_to: isManager() ? t.assigned_to : state.me.id, client_id: f.client_id || null
+        assigned_to: isManager() ? t.assigned_to : state.me.id, client_id: f.client_id && f.client_id !== '__novo' ? f.client_id : null
       };
       busy(e.submitter || e.target.querySelector('[type=submit]'), async () => {
         try {

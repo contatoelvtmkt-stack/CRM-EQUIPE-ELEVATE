@@ -30,6 +30,25 @@ Site estático (HTML/CSS/JS, sem build) + Supabase (login e banco).
 
 Sempre que o `sql/schema.sql` mudar, rode o arquivo inteiro de novo no SQL Editor. Ele só cria o que falta e atualiza o que já existe, sem apagar dados.
 
+## Aprovação do cliente (link temporário)
+
+Quando uma peça entra em **Revisão do cliente** (pelo botão ou arrastando no fluxo), o CRM cria sozinho um link de 7 dias. No detalhe da tarefa aparecem **Copiar**, **WhatsApp** e **Abrir**. O cliente não precisa de cadastro: vê as artes em carrossel, o vídeo com play, o PDF e os links, e responde:
+
+- **Aprovado** → a peça vai para *Agendamento*.
+- **Alteração** → escreve o que mudar (e pode anexar imagens); a peça volta como *Em alteração* para quem fez.
+
+O link deixa de funcionar depois da resposta, após 7 dias ou se a peça sair da etapa. "Gerar novo link" cria outro e encerra o anterior. A logo do cliente é enviada em *Equipe → Clientes*.
+
+### Prévia do link no WhatsApp (opcional, via Vercel)
+
+No GitHub Pages todos os links mostram a mesma prévia (logo da Elevate). Para cada link mostrar **a imagem do post e o nome do cliente**, publique o mesmo repositório na Vercel (gratuito):
+
+1. Entre em vercel.com com sua conta do GitHub → **Add New… → Project** → importe `CRM-EQUIPE-ELEVATE`.
+2. Framework: **Other**. Não precisa mudar mais nada → **Deploy**.
+3. Use o endereço da Vercel (ex.: `crm-equipe-elevate.vercel.app`) para acessar o CRM. Os links gerados já saem com esse endereço.
+
+A função `api/og.js` + `vercel.json` cuidam da prévia; pessoas abrem a página normal.
+
 ## Testar sem banco
 
 Abra o site com `?demo` no fim do endereço (ex.: `index.html?demo`) para navegar com dados de exemplo.

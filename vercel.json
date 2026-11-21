@@ -1,0 +1,21 @@
+{
+  "rewrites": [
+    {
+      "source": "/aprovacao.html",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(WhatsApp|facebookexternalhit|Facebot|Instagram|Twitterbot|TelegramBot|Slackbot|LinkedInBot|Discordbot|SkypeUriPreview|Googlebot|bingbot|Applebot|iMessage|redditbot|Pinterest|vkShare|Embedly).*"
+        }
+      ],
+      "destination": "/api/og"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/aprovacao.html",
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex" }]
+    }
+  ]
+}

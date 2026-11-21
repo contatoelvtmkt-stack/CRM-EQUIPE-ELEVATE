@@ -144,7 +144,20 @@ async function advance(t: Record<string, string>) {
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
+  try {
+    return await run();
+  } catch (e) {
+    const msg = (e as Error).message || String(e);
+    const hint = /publish_status|column|coluna/i.test(msg)
+      ? ' (Rode de novo o sql/schema.sql mais recente no SQL Editor.)'
+      : /JWT|apikey|Invalid API key|No API key/i.test(msg) ? ' (A função não encontrou a chave interna do Supabase.)' : '';
+    return json({ error: msg + hint }, 500);
+  }
+});
+
+async function run() {
   if (!META) return json({ error: 'O token da Meta (META_TOKEN) ainda não foi salvo nos Secrets das Edge Functions.' }, 500);
+  if (!URL_ || !KEY) return json({ error: 'A função não encontrou SUPABASE_URL ou a chave de serviço (SUPABASE_SERVICE_ROLE_KEY).' }, 500);
   const until = new Date(Date.now() + 60_000).toISOString();
   const due: Record<string, string>[] = await db(
     `pipeline?select=*&stage=eq.agendamento&scheduled_at=not.is.null&publish_status=in.(fila,processando)&post_at=lte.${encodeURIComponent(until)}&order=post_at&limit=20`
@@ -164,4 +177,4 @@ Deno.serve(async (req) => {
     }
   }
   return json({ verificados: due.length, results });
-});
+}

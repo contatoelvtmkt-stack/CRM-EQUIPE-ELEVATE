@@ -214,5 +214,10 @@ drop policy if exists "ver estrelas" on public.star_days;
 create policy "ver estrelas" on public.star_days for select to authenticated
   using (public.is_member());
 
+-- Permissões das tabelas (projetos novos do Supabase não liberam sozinhos)
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on public.profiles to authenticated;
+grant select, insert, update, delete on public.tasks to authenticated;
+grant select on public.star_days to authenticated;
 grant execute on function public.daily_rollover() to authenticated;
 grant execute on function public.set_member(uuid, text, text) to authenticated;

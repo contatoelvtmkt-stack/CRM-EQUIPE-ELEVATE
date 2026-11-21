@@ -16,11 +16,19 @@ Site estático (HTML/CSS/JS, sem build) + Supabase (login e banco).
 
 ## Regras
 
-- **Admin e gestora de projetos**: criam tarefas para qualquer pessoa, cadastram e editam a equipe, veem o painel do time todo.
-- **Designer, editor, social media, gestor de tráfego**: criam tarefas só para si e marcam o status das próprias demandas.
-- Status: *finalizada*, *parcialmente finalizada* ou *não realizada*. As duas últimas pedem justificativa e voltam sozinhas no dia seguinte com o mesmo status. Tarefa esquecida sem marcar vira *não realizada* na virada do dia.
-- **Estrela**: 1 por dia perfeito, ou seja, todas as demandas do dia finalizadas até o prazo.
-- O carrossel "como funciona" aparece no primeiro acesso e depois a cada 10 minutos (ajuste em `js/config.js`).
+- **Admin e gestora de projetos**: criam tarefas para qualquer pessoa, cadastram equipe e clientes, veem o painel do time, o fluxo de conteúdo e a energia do time.
+- **Social media**: além das próprias demandas, vê e move o **fluxo de conteúdo**.
+- **Designer / Editor e Gestor de tráfego**: criam tarefas só para si e marcam o status das próprias demandas.
+- Status do dia: *finalizada*, *incompleta* ou *não realizada* (as duas últimas pedem justificativa e voltam no dia seguinte). Tarefa esquecida sem marcar vira *não realizada*.
+- **Fluxo de conteúdo**: A fazer → Revisão interna → Revisão do cliente → Agendamento → Concluído. Ao marcar *finalizada*, a peça entra na revisão interna. Se a revisão (interna ou do cliente) pedir ajuste, a peça volta como **Em alteração** para a lista do dia de quem fez, com o comentário.
+- **Estrela**: 1 por dia perfeito (todas as demandas do dia finalizadas até o prazo). No ranking, os bichinhos correm: quem tem mais estrelas vai na frente.
+- **Jeremias**: a cada 2 horas pergunta "Tudo certo com as demandas?" (menos para admin e gestora). As respostas aparecem em *Energia do time*.
+- Tarefas aceitam **links** e **arquivos/imagens** anexados. Cada pessoa pode subir uma **foto de perfil** e escolher um **bichinho**.
+- Tempos do carrossel e do Jeremias: `js/config.js`.
+
+## Atualizar o banco
+
+Sempre que o `sql/schema.sql` mudar, rode o arquivo inteiro de novo no SQL Editor. Ele só cria o que falta e atualiza o que já existe, sem apagar dados.
 
 ## Testar sem banco
 

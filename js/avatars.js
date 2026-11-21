@@ -124,6 +124,48 @@ const A = {
   }
 };
 
+// cor do "corpo" de cada bicho na corrida do ranking
+const BODY = {
+  capivara: '#9a6b47', preguica: '#8c7b6b', gato: '#e8913a', cachorro: '#c9965e', coruja: '#5d4a7c', sapo: '#5fa047',
+  panda: '#f4f4f4', raposa: '#d9531e', pinguim: '#2a3442', porco: '#f2aab6', urso: '#8a5d3a', polvo: '#cc0000'
+};
+
+// Bichinho correndo: corpo + pernas animadas + cabeça do avatar escolhido
+export function runnerSVG(key, size = 64) {
+  const a = A[key] || A.capivara;
+  const c = BODY[key] || '#9a6b47';
+  return `<svg class="runner-svg" width="${size}" height="${size}" viewBox="0 0 100 100" aria-hidden="true">
+    <g class="r-legs-back"><rect class="leg l1" x="30" y="72" width="9" height="22" fill="${c}" style="filter:brightness(.7)"/><rect class="leg l2" x="58" y="72" width="9" height="22" fill="${c}" style="filter:brightness(.7)"/></g>
+    <rect x="22" y="56" width="52" height="24" fill="${c}"/>
+    <rect class="tail" x="14" y="58" width="10" height="6" fill="${c}"/>
+    <g class="r-legs-front"><rect class="leg l3" x="36" y="74" width="9" height="22" fill="${c}"/><rect class="leg l4" x="64" y="74" width="9" height="22" fill="${c}"/></g>
+    <g transform="translate(48 18) scale(.5)"><rect width="100" height="100" fill="${a.bg}"/>${a.svg}</g>
+  </svg>`;
+}
+
+// Jeremias: o mascote que pergunta como está o dia
+export const JEREMIAS_SVG = `<svg viewBox="0 0 100 100" width="100%" height="100%" role="img" aria-label="Jeremias">
+  <rect width="100" height="100" fill="#cc0000"/>
+  <rect x="20" y="86" width="60" height="14" fill="#181818"/><polygon points="44,86 56,86 53,100 47,100" fill="#e5e5e5"/>
+  <rect x="24" y="22" width="52" height="62" fill="#f0c39a"/>
+  <rect x="18" y="44" width="8" height="14" fill="#e2ad80"/><rect x="74" y="44" width="8" height="14" fill="#e2ad80"/>
+  <rect x="24" y="22" width="52" height="8" fill="#e8b48a"/>
+  <rect x="40" y="12" width="3" height="12" fill="#3a2a20" transform="rotate(-18 41 18)"/><rect x="49" y="9" width="3" height="14" fill="#3a2a20"/><rect x="58" y="12" width="3" height="12" fill="#3a2a20" transform="rotate(18 59 18)"/>
+  <rect x="27" y="38" width="20" height="16" fill="#e5e5e5" stroke="#181818" stroke-width="3"/><rect x="53" y="38" width="20" height="16" fill="#e5e5e5" stroke="#181818" stroke-width="3"/>
+  <rect x="46" y="43" width="8" height="3" fill="#181818"/>
+  <rect x="35" y="44" width="6" height="6" fill="#181818"/><rect x="59" y="42" width="6" height="6" fill="#181818"/>
+  <rect x="30" y="33" width="14" height="3" fill="#3a2a20" transform="rotate(-8 37 34)"/><rect x="56" y="31" width="14" height="3" fill="#3a2a20" transform="rotate(10 63 32)"/>
+  <rect x="46" y="54" width="8" height="8" fill="#e2ad80"/>
+  <path d="M28 66 L50 61 L72 66 L66 72 L50 68 L34 72 Z" fill="#3a2a20"/>
+  <rect x="44" y="74" width="12" height="4" fill="#9c3b2c"/>
+</svg>`;
+
+export const TURTLE_SVG = `<svg class="turtle" viewBox="0 0 40 24" width="30" height="18" aria-hidden="true">
+  <rect x="9" y="4" width="20" height="12" fill="#5fa047"/><rect x="13" y="7" width="5" height="5" fill="#3f7a2c"/><rect x="20" y="7" width="5" height="5" fill="#3f7a2c"/>
+  <rect x="29" y="8" width="8" height="7" fill="#8cc46f"/><rect x="34" y="10" width="2" height="2" fill="#181818"/>
+  <rect class="t-leg a" x="11" y="16" width="4" height="5" fill="#8cc46f"/><rect class="t-leg b" x="23" y="16" width="4" height="5" fill="#8cc46f"/><rect x="5" y="10" width="4" height="3" fill="#8cc46f"/>
+</svg>`;
+
 export const AVATARS = Object.keys(A);
 export const avatarName = (k) => (A[k] || A.capivara).nome;
 export function avatarSVG(key, size = 40) {

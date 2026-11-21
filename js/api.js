@@ -151,7 +151,7 @@ function supabaseApi() {
         if (/Failed to send|not found|404/i.test(msg)) msg = 'A função "ig-accounts" ainda não foi publicada no Supabase.';
         throw new Error(msg);
       }
-      return data.accounts || [];
+      return { accounts: data.accounts || [], adaccounts: data.adaccounts || [] };
     },
     async publishNow(id) {
       ok(await sb.rpc('publish_now', { p_id: id }));
@@ -197,7 +197,7 @@ function demoApi() {
   ];
   const clients = [
     { id: 'c1', name: 'Clínica Sorriso', active: true, instagram: 'clinicasorriso' }, { id: 'c2', name: 'Studio Nova', active: true, instagram: 'studionova' },
-    { id: 'c3', name: 'Café Grão', active: true, instagram: 'cafegrao', ig_user_id: '17841400000000003', ig_username: 'cafegrao', fb_page_id: '1003', fb_page_name: 'Café Grão' }, { id: 'c4', name: 'Academia Força', active: true }
+    { id: 'c3', name: 'Café Grão', active: true, instagram: 'cafegrao', ig_user_id: '17841400000000003', ig_username: 'cafegrao', fb_page_id: '1003', fb_page_name: 'Café Grão', ad_account_id: 'act_333', ad_account_name: 'Café Grão - Anúncios' }, { id: 'c4', name: 'Academia Força', active: true }
   ];
   const mk = (title, who, status, prio, extra = {}) => {
     const id = uid();
@@ -254,15 +254,26 @@ function demoApi() {
     const types = ['feed', 'carrossel', 'reels', 'reels', 'carrossel', 'feed', 'story', 'reels'];
     const imgs = ['assets/img/bg-branco.jpg', 'assets/img/og-elevate.jpg', 'assets/img/icon-512.png'];
     const ig = {
-      username: c.ig_username || c.instagram || 'cliente', followers: 5321, totals: { reach: tot('r', 21000), views: tot('v', 64000), accounts_engaged: tot('e', 1900), total_interactions: tot('i', 3400), likes: tot('l', 2800), comments: tot('c', 240), shares: tot('s', 180), saves: tot('sv', 310), profile_views: tot('pv', 1500), profile_links_taps: tot('pl', 120), follows: 140, unfollows: 32 },
+      username: c.ig_username || c.instagram || 'cliente', followers: 5321, totals: { reach: tot('r', 21000), views: tot('v', 64000), accounts_engaged: tot('e', 1900), total_interactions: tot('i', 3400), likes: tot('l', 2800), comments: tot('c', 240), shares: tot('s', 180), saves: tot('sv', 310), profile_views: tot('pv', 1500), profile_links_taps: tot('pl', 120), follows: 140, unfollows: 32, reach_by_follow: { FOLLOWER: 8200, NON_FOLLOWER: 12700 }, total_interactions_by_follow: { FOLLOWER: 2300, NON_FOLLOWER: 1100 }, taps_by_button: { UNDEFINED: 29, DIRECTION: 1, CALL: 4, TEXT: 12 } },
       prevTotals: { reach: 18000, views: 61000, accounts_engaged: 2100, total_interactions: 3000, likes: 2500, comments: 260, shares: 150, saves: 280, profile_views: 1400, profile_links_taps: 90 },
       daily, errors: [],
       posts: types.map((t, i) => ({ id: 'p' + i, type: t, caption: ['Café da manhã com vista pro mar ☀️', 'Conheça nossas suítes renovadas', 'Bastidores do fim de semana', 'Promoção de feriado: 3 noites pelo preço de 2', 'Roteiro: 5 praias perto da pousada', 'Depoimento de hóspede', 'Story: check-in', 'Pôr do sol de ontem'][i], date: addDays(since, Math.min(days - 1, i * 3 + 1)) + 'T15:00:00Z', permalink: 'https://www.instagram.com/', thumb: imgs[i % 3], likes: Math.round(80 + rnd() * 400), comments: Math.round(rnd() * 40), reach: Math.round(900 + rnd() * 5000), saves: Math.round(rnd() * 60), shares: Math.round(rnd() * 30) }))
     };
-    const fb = { name: c.fb_page_name || c.name, followers: 1830, totals: { page_media_view: tot('fv', 9800), page_post_engagements: tot('fe', 640), page_daily_follows_unique: 24 }, prevTotals: { page_media_view: 10400, page_post_engagements: 590, page_daily_follows_unique: 18 }, daily: daily.map((x) => ({ date: x.date, value: Math.round(x.value / 3) })), errors: [],
+    const fb = { name: c.fb_page_name || c.name, followers: 1830, totals: { page_media_view: tot('fv', 9800), page_post_engagements: tot('fe', 640), page_daily_follows_unique: 24, page_total_actions: 41 }, prevTotals: { page_media_view: 10400, page_post_engagements: 590, page_daily_follows_unique: 18 }, daily: daily.map((x) => ({ date: x.date, value: Math.round(x.value / 3) })), errors: [],
       posts: [0, 1, 2, 3].map((i) => ({ id: 'f' + i, caption: ['Pacote de fim de ano já disponível', 'Nossa piscina aquecida', 'Vagas para o Réveillon', 'Bem-vindos, novos hóspedes!'][i], date: addDays(since, i * 6 + 2) + 'T12:00:00Z', permalink: 'https://www.facebook.com/', thumb: imgs[(i + 1) % 3], reactions: Math.round(20 + rnd() * 120), comments: Math.round(rnd() * 20), shares: Math.round(rnd() * 10) })) };
     const len = days;
-    return { client: { id: c.id, name: c.name, logo_url: c.logo_url }, since, until, prev: { since: addDays(since, -len), until: addDays(since, -1) }, ig, fb, generated_at: new Date().toISOString() };
+    const sum = (o) => o;
+    const ads = c.ad_account_id ? {
+      name: c.ad_account_name || 'Conta de anúncios', currency: 'BRL',
+      totals: sum({ spend: 241.57, reach: 10444, impressions: 23111, frequency: 2.21, clicks: 363, link_clicks: 153, conversations: 33, leads: 0, purchases: 0, result_label: 'Conversas iniciadas', results: 33, cost_per_result: 7.32, ctr: 1.57, cpm: 10.45 }),
+      prevTotals: { spend: 210, reach: 9800, impressions: 20500, frequency: 2.09, clicks: 301, link_clicks: 120, conversations: 25, results: 25, cost_per_result: 8.4 },
+      daily: daily.map((x) => ({ date: x.date, value: Math.round((5 + rnd() * 6) * 100) / 100 })),
+      campaigns: [
+        { name: '[MSG] Pacotes de fim de semana', spend: 140.2, results: 21, result_label: 'Conversas iniciadas', cost_per_result: 6.68 },
+        { name: '[MSG] Suítes temáticas', spend: 71.37, results: 12, result_label: 'Conversas iniciadas', cost_per_result: 5.95 },
+        { name: '[ALCANCE] Perfil', spend: 30, results: 61, result_label: 'Cliques no link', cost_per_result: 0.49 }
+      ], errors: [] } : { unavailable: 'A conta de anúncios deste cliente ainda não foi vinculada (Equipe → Clientes → botão do Instagram → Conta de anúncios).' };
+    return { client: { id: c.id, name: c.name, logo_url: c.logo_url }, since, until, prev: { since: addDays(since, -len), until: addDays(since, -1) }, ig, fb, ads, generated_at: new Date().toISOString() };
   }
   const demoReports = [];
   [1, 2].forEach((k) => {
@@ -385,7 +396,10 @@ function demoApi() {
     },
     async igAccounts() {
       await new Promise((r) => setTimeout(r, 500));
-      return [{ id: '17841400000000001', username: 'a2pousadaap', page: 'A2 Pousada', page_id: '1001', picture: '' }, { id: '17841400000000002', username: 'fisioclinic', page: 'Fisioclinic', page_id: '1002', picture: '' }, { id: '', username: '', page: 'Conta Livre', page_id: '1009', picture: '' }];
+      return {
+        accounts: [{ id: '17841400000000001', username: 'a2pousadaap', page: 'A2 Pousada', page_id: '1001', picture: '' }, { id: '17841400000000002', username: 'fisioclinic', page: 'Fisioclinic', page_id: '1002', picture: '' }, { id: '', username: '', page: 'Conta Livre', page_id: '1009', picture: '' }],
+        adaccounts: [{ id: 'act_111', name: 'A2 Pousada - Anúncios', currency: 'BRL' }, { id: 'act_222', name: 'Fisioclinic', currency: 'BRL' }]
+      };
     },
     async publishNow(id) {
       const x = tasks.find((k) => k.id === id);

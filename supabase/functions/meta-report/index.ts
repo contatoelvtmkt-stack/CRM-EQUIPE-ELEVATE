@@ -94,7 +94,26 @@ async function igTotals(ig: string, since: string, until: string, errs: string[]
     }
   }
   if (okF) { out.follows = follows; out.unfollows = unfollows; }
+  // seguidores x não seguidores (alcance, interações, contas engajadas)
+  for (const m of ['reach', 'total_interactions', 'accounts_engaged']) {
+    const b = await igBreakdown(ig, m, 'follow_type', since, until);
+    if (b) out[`${m}_by_follow`] = b;
+  }
+  // toques por botão do perfil (ligar, endereço, e-mail, links...)
+  const taps = await igBreakdown(ig, 'profile_links_taps', 'contact_button_type', since, until);
+  if (taps) out.taps_by_button = taps;
   return out;
+}
+
+async function igBreakdown(ig: string, metric: string, breakdown: string, since: string, until: string) {
+  const out: Record<string, number> = {}; let ok = false;
+  for (const [s, e] of windows(since, until)) {
+    const d = await safe(g(`/${ig}/insights`, { metric, period: 'day', metric_type: 'total_value', breakdown, since: String(s), until: String(e) }), null as Obj | null);
+    for (const r of d?.data?.[0]?.total_value?.breakdowns?.[0]?.results ?? []) {
+      ok = true; const k = r.dimension_values?.[0] ?? 'OUTROS'; out[k] = (out[k] ?? 0) + (r.value ?? 0);
+    }
+  }
+  return ok ? out : null;
 }
 
 async function igDailyReach(ig: string, since: string, until: string) {
@@ -156,7 +175,7 @@ async function instagram(ig: string, since: string, until: string, prev: [string
 }
 
 // ---------- Facebook ----------
-const FB_METRICS = ['page_media_view', 'page_impressions_unique', 'page_post_engagements', 'page_follows', 'page_daily_follows_unique', 'page_views_total', 'page_video_views'];
+const FB_METRICS = ['page_media_view', 'page_impressions_unique', 'page_impressions', 'page_post_engagements', 'page_follows', 'page_daily_follows_unique', 'page_fan_adds_unique', 'page_views_total', 'page_total_actions', 'page_video_views'];
 
 async function pageToken(pageId: string) {
   const d = await g('/me/accounts', { fields: 'id,access_token', limit: '200' });
@@ -179,7 +198,7 @@ async function fbTotals(page: string, tok: string, since: string, until: string,
 async function facebook(pageId: string, since: string, until: string, prev: [string, string]) {
   const errs: string[] = [];
   const tok = await safe(pageToken(pageId), null as string | null, errs, 'Acesso à página');
-  if (!tok) return { errors: ['A página do Facebook não está liberada para o usuário do sistema CRM Elevate.', ...errs] };
+  if (!tok) return { unavailable: 'A página do Facebook deste cliente não está liberada para o usuário do sistema "CRM Elevate" no Gerenciador de Negócios.', errors: errs };
   const info = await safe(g(`/${pageId}`, { fields: 'name,followers_count,fan_count,picture{url}' }, tok), {} as Obj, errs, 'Página');
   const [cur, prv, posts] = await Promise.all([
     fbTotals(pageId, tok, since, until, errs),
@@ -201,15 +220,69 @@ async function facebook(pageId: string, since: string, until: string, prev: [str
   };
 }
 
+
+// ---------- Tráfego pago (Meta Ads) ----------
+const RESULT_TYPES: [string, string[]][] = [
+  ['Conversas iniciadas', ['onsite_conversion.messaging_conversation_started_7d']],
+  ['Leads', ['lead', 'onsite_conversion.lead_grouped', 'offsite_conversion.fb_pixel_lead']],
+  ['Compras', ['purchase', 'offsite_conversion.fb_pixel_purchase', 'omni_purchase']],
+  ['Cliques no link', ['link_click']]
+];
+const actionVal = (list: Obj[] | undefined, types: string[]) => {
+  for (const t of types) { const a = (list ?? []).find((x) => x.action_type === t); if (a) return Number(a.value); }
+  return 0;
+};
+function adSummary(row: Obj | undefined) {
+  if (!row) return null;
+  const spend = Number(row.spend ?? 0);
+  const conversations = actionVal(row.actions, RESULT_TYPES[0][1]);
+  let result = { label: 'Resultados', value: 0 };
+  for (const [label, types] of RESULT_TYPES) { const v = actionVal(row.actions, types); if (v > 0) { result = { label, value: v }; break; } }
+  return {
+    spend, reach: Number(row.reach ?? 0), impressions: Number(row.impressions ?? 0), frequency: Number(row.frequency ?? 0),
+    clicks: Number(row.clicks ?? 0), link_clicks: Number(row.inline_link_clicks ?? 0) || actionVal(row.actions, ['link_click']),
+    conversations, leads: actionVal(row.actions, RESULT_TYPES[1][1]), purchases: actionVal(row.actions, RESULT_TYPES[2][1]),
+    result_label: result.label, results: result.value, cost_per_result: result.value ? spend / result.value : null,
+    ctr: Number(row.ctr ?? 0), cpm: Number(row.cpm ?? 0)
+  };
+}
+const AD_FIELDS = 'spend,reach,impressions,frequency,clicks,inline_link_clicks,actions,ctr,cpm';
+async function adsReport(account: string, since: string, until: string, prev: [string, string]) {
+  const errs: string[] = [];
+  const act = account.startsWith('act_') ? account : `act_${account}`;
+  const tr = (a: string, b: string) => JSON.stringify({ since: a, until: b });
+  const [info, cur, prv, daily, camps] = await Promise.all([
+    safe(g(`/${act}`, { fields: 'name,currency,account_status' }), {} as Obj, errs, 'Conta de anúncios'),
+    safe(g(`/${act}/insights`, { level: 'account', fields: AD_FIELDS, time_range: tr(since, until) }), { data: [] } as Obj, errs, 'Resumo dos anúncios'),
+    safe(g(`/${act}/insights`, { level: 'account', fields: AD_FIELDS, time_range: tr(prev[0], prev[1]) }), { data: [] } as Obj),
+    safe(g(`/${act}/insights`, { level: 'account', fields: 'spend', time_range: tr(since, until), time_increment: '1', limit: '400' }), { data: [] } as Obj),
+    safe(g(`/${act}/insights`, { level: 'campaign', fields: `campaign_name,objective,${AD_FIELDS}`, time_range: tr(since, until), limit: '100' }), { data: [] } as Obj, errs, 'Campanhas')
+  ]);
+  if (errs.length && !cur.data?.length && !info.name) {
+    return { unavailable: 'A conta de anúncios deste cliente não está liberada para o usuário do sistema "CRM Elevate" (ou o token não tem a permissão ads_read).', errors: errs };
+  }
+  return {
+    name: info.name ?? '', currency: info.currency ?? 'BRL',
+    totals: adSummary(cur.data?.[0]) ?? adSummary({}), prevTotals: adSummary(prv.data?.[0]),
+    daily: (daily.data ?? []).map((r: Obj) => ({ date: r.date_start, value: Number(r.spend ?? 0) })),
+    campaigns: (camps.data ?? []).map((c: Obj) => ({ name: c.campaign_name, objective: c.objective, ...adSummary(c) }))
+      .filter((c: Obj) => c.spend > 0).sort((a: Obj, b: Obj) => b.spend - a.spend).slice(0, 8),
+    errors: [...new Set(errs)].slice(0, 6)
+  };
+}
+
 // ---------- relatório ----------
 async function buildReport(client: Obj, since: string, until: string) {
   const len = daysBetween(since, until);
   const prev: [string, string] = [addDays(since, -len), addDays(since, -1)];
-  const [ig, fb] = await Promise.all([
+  const [ig, fb, ads] = await Promise.all([
     client.ig_user_id ? instagram(client.ig_user_id, since, until, prev) : Promise.resolve(null),
-    client.fb_page_id ? facebook(client.fb_page_id, since, until, prev) : Promise.resolve(null)
+    client.fb_page_id ? facebook(client.fb_page_id, since, until, prev)
+      : Promise.resolve({ unavailable: 'A página do Facebook deste cliente ainda não foi vinculada (Equipe → Clientes → botão do Instagram → Buscar contas liberadas).' }),
+    client.ad_account_id ? adsReport(client.ad_account_id, since, until, prev)
+      : Promise.resolve({ unavailable: 'A conta de anúncios deste cliente ainda não foi vinculada (Equipe → Clientes → botão do Instagram → Conta de anúncios).' })
   ]);
-  return { client: { id: client.id, name: client.name, logo_url: client.logo_url }, since, until, prev: { since: prev[0], until: prev[1] }, ig, fb, generated_at: new Date().toISOString() };
+  return { client: { id: client.id, name: client.name, logo_url: client.logo_url }, since, until, prev: { since: prev[0], until: prev[1] }, ig, fb, ads, generated_at: new Date().toISOString() };
 }
 async function saveReport(client: Obj, kind: string, since: string, until: string, data: Obj, by: string | null) {
   const [row] = await db('reports?on_conflict=client_id,kind,period_start,period_end', {
@@ -232,7 +305,7 @@ Deno.serve(async (req) => {
       const first = `${today.slice(0, 7)}-01`;
       const until = addDays(first, -1);
       const since = `${until.slice(0, 7)}-01`;
-      const clients: Obj[] = await db('clients?active=eq.true&or=(ig_user_id.not.is.null,fb_page_id.not.is.null)&select=*');
+      const clients: Obj[] = await db('clients?active=eq.true&or=(ig_user_id.not.is.null,fb_page_id.not.is.null,ad_account_id.not.is.null)&select=*');
       const done: string[] = [];
       for (const c of clients) {
         try { await saveReport(c, 'mensal', since, until, await buildReport(c, since, until), null); done.push(c.name); }
@@ -249,7 +322,7 @@ Deno.serve(async (req) => {
     if (daysBetween(since, until) > 366) return json({ error: 'O período máximo é de 1 ano.' }, 400);
     const [client] = await db(`clients?id=eq.${client_id}&select=*`);
     if (!client) return json({ error: 'Cliente não encontrado.' }, 404);
-    if (!client.ig_user_id && !client.fb_page_id) return json({ error: 'Este cliente ainda não tem Instagram nem página do Facebook vinculados.' }, 400);
+    if (!client.ig_user_id && !client.fb_page_id && !client.ad_account_id) return json({ error: 'Este cliente ainda não tem Instagram, página do Facebook nem conta de anúncios vinculados.' }, 400);
     const data = await buildReport(client, since, until);
     const kind = body.kind === 'mensal' ? 'mensal' : 'personalizado';
     const row = await saveReport(client, kind, since, until, data, who.id);

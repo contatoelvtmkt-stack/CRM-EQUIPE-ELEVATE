@@ -38,6 +38,8 @@ alter table public.clients add column if not exists ig_user_id  text;
 alter table public.clients add column if not exists ig_username text;
 alter table public.clients add column if not exists fb_page_id  text;
 alter table public.clients add column if not exists fb_page_name text;
+alter table public.clients add column if not exists ad_account_id   text;
+alter table public.clients add column if not exists ad_account_name text;
 
 -- ---------- Relatórios (Instagram e Facebook) ---------------------------
 create table if not exists public.reports (

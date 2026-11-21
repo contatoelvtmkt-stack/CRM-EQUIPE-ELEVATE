@@ -507,12 +507,14 @@ export async function viewEquipe(tab = 'pessoas') {
 function igSheet(cl, clients) {
   openSheet(`
     <div class="sheet-head"><div><small class="muted">Instagram do cliente</small><h2>${esc(cl.name)}</h2></div><button class="icon-btn" data-close aria-label="Fechar">${I.x}</button></div>
-    ${cl.ig_user_id || cl.fb_page_id ? `<div class="pub card glow"><div class="pub-h"><b>${I.check} Vinculado</b></div>
+    ${cl.ig_user_id || cl.fb_page_id || cl.ad_account_id ? `<div class="pub card glow"><div class="pub-h"><b>${I.check} Vinculado</b></div>
       ${cl.ig_user_id ? `<p style="margin-top:8px">Instagram: @${esc(cl.ig_username || '')} <small class="muted">(publicação e relatórios)</small></p>` : ''}
-      ${cl.fb_page_id ? `<p style="margin-top:4px">Facebook: ${esc(cl.fb_page_name || cl.fb_page_id)} <small class="muted">(relatórios)</small></p>` : ''}</div>` : ''}
+      ${cl.fb_page_id ? `<p style="margin-top:4px">Facebook: ${esc(cl.fb_page_name || cl.fb_page_id)} <small class="muted">(relatórios)</small></p>` : ''}
+      ${cl.ad_account_id ? `<p style="margin-top:4px">Anúncios: ${esc(cl.ad_account_name || cl.ad_account_id)} <small class="muted">(tráfego pago)</small></p>` : ''}</div>` : ''}
     <p class="muted" style="font-size:13px;line-height:1.5;margin-bottom:12px">Escolha a conta do cliente. Ela é usada para publicar no Instagram e para os relatórios de Instagram e Facebook. A lista mostra o que foi liberado para o usuário do sistema "CRM Elevate" no Gerenciador de Negócios.</p>
     <button class="btn btn-white" id="ig-load">${I.insta} Buscar contas liberadas</button>
     <div class="list" id="ig-list" style="margin-top:12px"></div>
+    <div class="list" id="ad-list"></div>
     <details style="margin-top:16px"><summary class="muted" style="font-size:13px;cursor:pointer">Preencher manualmente</summary>
       <div class="field" style="margin-top:10px"><label for="ig-id">ID da conta do Instagram</label><input class="input" id="ig-id" inputmode="numeric" value="${esc(cl.ig_user_id || '')}"></div>
       <div class="field"><label for="ig-user">@ da conta</label><input class="input" id="ig-user" value="${esc(cl.ig_username || cl.instagram || '')}"></div>
@@ -527,6 +529,7 @@ function igSheet(cl, clients) {
       if (other && !confirm(`Esta conta já está vinculada a ${other.name}. Vincular também a ${cl.name}?`)) return;
       const patch = { ig_user_id: id || null, ig_username: clean || null, instagram: clean || cl.instagram || null };
       if (pageId !== undefined) { patch.fb_page_id = pageId || null; patch.fb_page_name = pageName || null; }
+      if (!id && !pageId && pageId !== undefined) { patch.ad_account_id = null; patch.ad_account_name = null; }
       await api.updateClient(cl.id, patch);
       close();
       toast(id ? `${cl.name} vinculado a @${clean}${pageName ? ' e à página ' + pageName : ''}.` : pageId ? `${cl.name} vinculado à página ${pageName}.` : 'Desvinculado.');
@@ -535,7 +538,12 @@ function igSheet(cl, clients) {
     $('#ig-load', root).onclick = (e) => busy(e.currentTarget, async () => {
       $('#ig-err', root).textContent = '';
       try {
-        const accs = await api.igAccounts();
+        const { accounts: accs, adaccounts } = await api.igAccounts();
+        $('#ad-list', root).innerHTML = adaccounts.length ? `<div class="section-title" style="margin-top:18px"><h2>Conta de anúncios</h2><span>tráfego pago no relatório</span></div>` + adaccounts.map((a) => `
+          <button class="person card" data-ad="${esc(a.id)}" data-adname="${esc(a.name)}">
+            <span class="client-logo" style="width:40px;height:40px">${I.chart}</span>
+            <span class="info"><b>${esc(a.name)}</b><small>${esc(a.id)}${a.currency ? ' · ' + esc(a.currency) : ''}</small></span>${cl.ad_account_id === a.id ? `<span class="tag solid">${I.check}</span>` : ''}
+          </button>`).join('') : '<p class="muted" style="font-size:13px;margin-top:14px">Nenhuma conta de anúncios liberada ainda (atribua a conta ao CRM Elevate e inclua a permissão ads_read no token).</p>';
         $('#ig-list', root).innerHTML = accs.length ? accs.map((a) => `
           <button class="person card" data-acc="${esc(a.id)}" data-user="${esc(a.username)}" data-page="${esc(a.page_id || '')}" data-pname="${esc(a.page || '')}">
             ${a.picture ? `<img src="${esc(a.picture)}" width="40" height="40" alt="" style="object-fit:cover">` : `<span class="client-logo" style="width:40px;height:40px">${I.insta}</span>`}
@@ -544,6 +552,13 @@ function igSheet(cl, clients) {
       } catch (er) { $('#ig-err', root).textContent = er.message; }
     });
     $('#ig-list', root).onclick = (e) => { const b = e.target.closest('[data-acc]'); if (b) link(b.dataset.acc, b.dataset.user, b.dataset.page, b.dataset.pname).catch((er) => ($('#ig-err', root).textContent = er.message)); };
+    $('#ad-list', root).onclick = async (e) => {
+      const b = e.target.closest('[data-ad]'); if (!b) return;
+      try {
+        await api.updateClient(cl.id, { ad_account_id: b.dataset.ad, ad_account_name: b.dataset.adname });
+        close(); toast(`${cl.name}: conta de anúncios vinculada.`); viewEquipe('clientes');
+      } catch (er) { $('#ig-err', root).textContent = er.message; }
+    };
     $('#ig-save', root).onclick = () => {
       const id = $('#ig-id', root).value.trim();
       if (id && !/^\d{5,}$/.test(id)) return ($('#ig-err', root).textContent = 'O ID é só números (ex.: 17841400000000000).');
@@ -708,11 +723,11 @@ export async function viewRelatorios() {
     <div class="page">
       <p class="muted rise" style="font-size:13px;line-height:1.5;margin:6px 0 14px">Todo dia 1 o CRM gera sozinho o relatório do mês anterior de cada cliente vinculado. Você também pode gerar por datas.</p>
       <div class="rep-clients">${active.map((c, i) => {
-        const linked = c.ig_user_id || c.fb_page_id;
+        const linked = c.ig_user_id || c.fb_page_id || c.ad_account_id;
         const r = lastBy[c.id];
         return `<button class="rep-item card rise" style="--i:${i}" data-cl="${c.id}">
           <span class="client-logo" style="width:46px;height:46px">${c.logo_url ? `<img src="${esc(c.logo_url)}" alt="">` : I.building}</span>
-          <span class="info"><b>${esc(c.name)}</b><small>${linked ? `${c.ig_username ? '@' + esc(c.ig_username) : ''}${c.ig_username && c.fb_page_id ? ' · ' : ''}${c.fb_page_id ? 'Facebook' : ''}` : 'Instagram não vinculado'}${r ? ` · último: ${periodLabel(r.period_start, r.period_end)}` : ''}</small></span>
+          <span class="info"><b>${esc(c.name)}</b><small>${linked ? `${c.ig_username ? '@' + esc(c.ig_username) : ''}${c.ig_username && c.fb_page_id ? ' · ' : ''}${c.fb_page_id ? 'Facebook' : ''}${c.ad_account_id ? ' · Anúncios' : ''}` : 'Instagram não vinculado'}${r ? ` · último: ${periodLabel(r.period_start, r.period_end)}` : ''}</small></span>
           ${I.arrow}</button>`;
       }).join('') || emptyBox('Nenhum cliente cadastrado.')}</div>
     </div>`;
@@ -724,7 +739,7 @@ async function viewRelCliente(id) {
   const c = state.clients.find((x) => x.id === id) || (await api.clients()).find((x) => x.id === id);
   if (!c) { state.relClient = null; return viewRelatorios(); }
   const list = await api.reports(id).catch(() => []);
-  const linked = c.ig_user_id || c.fb_page_id;
+  const linked = c.ig_user_id || c.fb_page_id || c.ad_account_id;
   const [qs, qu] = QUICK[0][1]();
   view().innerHTML = `
     <header class="top rise">

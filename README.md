@@ -64,7 +64,9 @@ Configuração (uma vez):
 
 Menu **Relatórios** (admin, gestora e social media): uma aba por cliente com os relatórios salvos. Todo dia 1 o CRM gera sozinho o relatório do mês anterior de cada cliente vinculado; também dá para gerar por período. **Exportar PDF** abre a impressão em A4 deitado (escolha "Salvar como PDF").
 
-Configuração: publicar a função `meta-report` (Edge Functions → Via Editor, com verificação de JWT desligada) e rodar `sql/cron.sql` de novo para ligar a geração mensal. Para as métricas da página do Facebook, o token precisa também da permissão `read_insights`.
+Páginas do relatório: Instagram (visão geral, com seguidores x não seguidores e atividade no perfil), conteúdos de maior alcance, Facebook e Tráfego pago (Meta Ads: investido, conversas, custo por resultado, cliques, alcance, impressões, frequência, investimento por dia e campanhas). Se algo não estiver vinculado ou liberado, a página mostra o motivo.
+
+Configuração: publicar a função `meta-report` (Edge Functions → Via Editor, com verificação de JWT desligada) e rodar `sql/cron.sql` de novo para ligar a geração mensal. Permissões do token: `read_insights` (Facebook) e `ads_read` (tráfego pago). A conta de anúncios de cada cliente é compartilhada com a Elevate como parceira, atribuída ao usuário do sistema CRM Elevate e vinculada no CRM (Equipe → Clientes → botão do Instagram → Conta de anúncios).
 
 ## Testar sem banco
 

@@ -73,7 +73,12 @@ Deno.serve(async (req) => {
       }
     } catch { /* lista das páginas já basta */ }
 
-    return json({ accounts: [...found.values()].sort((a, b) => (a.username || a.page).localeCompare(b.username || b.page)) });
+    // 3) contas de anúncios liberadas (precisa da permissão ads_read no token)
+    const ads = await graph('/me/adaccounts?fields=id,name,account_status,currency&limit=200').catch(() => ({ data: [] }));
+    const adaccounts = (ads.data ?? []).map((a: Record<string, string>) => ({ id: a.id, name: a.name ?? a.id, currency: a.currency ?? '' }))
+      .sort((a: Record<string, string>, b: Record<string, string>) => a.name.localeCompare(b.name));
+
+    return json({ accounts: [...found.values()].sort((a, b) => (a.username || a.page).localeCompare(b.username || b.page)), adaccounts });
   } catch (e) {
     return json({ error: (e as Error).message }, 500);
   }

@@ -56,7 +56,8 @@ Deno.serve(async (req) => {
     const pages = await graph('/me/accounts?fields=name,instagram_business_account{id,username,profile_picture_url}&limit=200');
     for (const p of pages.data ?? []) {
       const ig = p.instagram_business_account;
-      if (ig?.id) found.set(ig.id, { id: ig.id, username: ig.username ?? '', picture: ig.profile_picture_url ?? '', page: p.name ?? '' });
+      if (ig?.id) found.set(ig.id, { id: ig.id, username: ig.username ?? '', picture: ig.profile_picture_url ?? '', page: p.name ?? '', page_id: p.id });
+      else found.set(`page:${p.id}`, { id: '', username: '', picture: '', page: p.name ?? '', page_id: p.id }); // página sem Instagram ligado
     }
     // 2) contas do Instagram dos portfólios a que o usuário do sistema tem acesso
     try {
@@ -66,13 +67,13 @@ Deno.serve(async (req) => {
         for (const edge of ['instagram_accounts', 'client_instagram_accounts', 'owned_instagram_accounts']) {
           const r = await graph(`/${b.id}/${edge}?fields=id,username,profile_pic&limit=200`).catch(() => ({ data: [] }));
           for (const ig of r.data ?? []) {
-            if (ig?.id && !found.has(ig.id)) found.set(ig.id, { id: ig.id, username: ig.username ?? '', picture: ig.profile_pic ?? '', page: '' });
+            if (ig?.id && !found.has(ig.id)) found.set(ig.id, { id: ig.id, username: ig.username ?? '', picture: ig.profile_pic ?? '', page: '', page_id: '' });
           }
         }
       }
     } catch { /* lista das páginas já basta */ }
 
-    return json({ accounts: [...found.values()].sort((a, b) => a.username.localeCompare(b.username)) });
+    return json({ accounts: [...found.values()].sort((a, b) => (a.username || a.page).localeCompare(b.username || b.page)) });
   } catch (e) {
     return json({ error: (e as Error).message }, 500);
   }

@@ -21,3 +21,21 @@ select cron.schedule(
        body := '{"origem": "cron"}'::jsonb
      ) $$
 );
+
+-- Relatórios mensais: todo dia 1, às 6h (horário de Brasília), gera o mês anterior de cada cliente
+do $$
+begin
+  perform cron.unschedule('relatorios-mensais');
+exception when others then null;
+end $$;
+
+select cron.schedule(
+  'relatorios-mensais',
+  '0 9 1 * *',
+  $$ select net.http_post(
+       url := 'https://yzpxyiisadexrwplcljp.supabase.co/functions/v1/meta-report',
+       headers := '{"Content-Type": "application/json"}'::jsonb,
+       body := '{"monthly": true}'::jsonb,
+       timeout_milliseconds := 120000
+     ) $$
+);

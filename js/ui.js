@@ -68,6 +68,7 @@ export const I = {
   crown: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 7l5 4 4-7 4 7 5-4-2 12H5z"/></svg>',
   clock: p('<rect x="3" y="3" width="18" height="18"/><path d="M12 7v5l3 2"/>'),
   insta: p('<rect x="3" y="3" width="18" height="18"/><rect x="8" y="8" width="8" height="8"/><path d="M17 6.5h.5"/>'),
+  report: p('<path d="M5 3h10l4 4v14H5z"/><path d="M9 17v-3M12 17v-6M15 17v-4"/>'),
   calendar: p('<rect x="3" y="5" width="18" height="16"/><path d="M3 10h18M8 3v4M16 3v4"/>')
 };
 

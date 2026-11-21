@@ -127,6 +127,22 @@ function supabaseApi() {
     async newApprovalLink(taskId) { return ok(await sb.rpc('new_approval_link', { p_task: taskId })); },
     async confirmSchedule(id, postAt, caption, format) { ok(await sb.rpc('confirm_schedule', { p_id: id, p_post_at: postAt, p_caption: caption, p_format: format || '' })); },
     async unconfirmSchedule(id) { ok(await sb.rpc('unconfirm_schedule', { p_id: id })); },
+    async reports(clientId) {
+      return ok(await sb.from('reports').select('id,client_id,kind,period_start,period_end,created_at').eq('client_id', clientId).order('period_start', { ascending: false }).limit(60));
+    },
+    async lastReports() { return ok(await sb.from('reports').select('client_id,period_start,period_end,created_at').order('created_at', { ascending: false }).limit(300)); },
+    async report(id) { return ok(await sb.from('reports').select('*').eq('id', id).single()); },
+    async deleteReport(id) { ok(await sb.from('reports').delete().eq('id', id)); },
+    async generateReport(clientId, since, until, kind = 'personalizado') {
+      const { data, error } = await sb.functions.invoke('meta-report', { body: { client_id: clientId, since, until, kind } });
+      if (error) {
+        let msg = error.message;
+        try { msg = (await error.context.json()).error || msg; } catch { /* */ }
+        if (/Failed to send|not found|404/i.test(msg)) msg = 'A função "meta-report" ainda não foi publicada no Supabase.';
+        throw new Error(msg);
+      }
+      return data.report;
+    },
     async igAccounts() {
       const { data, error } = await sb.functions.invoke('ig-accounts', { body: {} });
       if (error) {
@@ -181,7 +197,7 @@ function demoApi() {
   ];
   const clients = [
     { id: 'c1', name: 'Clínica Sorriso', active: true, instagram: 'clinicasorriso' }, { id: 'c2', name: 'Studio Nova', active: true, instagram: 'studionova' },
-    { id: 'c3', name: 'Café Grão', active: true, instagram: 'cafegrao', ig_user_id: '17841400000000003', ig_username: 'cafegrao' }, { id: 'c4', name: 'Academia Força', active: true }
+    { id: 'c3', name: 'Café Grão', active: true, instagram: 'cafegrao', ig_user_id: '17841400000000003', ig_username: 'cafegrao', fb_page_id: '1003', fb_page_name: 'Café Grão' }, { id: 'c4', name: 'Academia Força', active: true }
   ];
   const mk = (title, who, status, prio, extra = {}) => {
     const id = uid();
@@ -228,6 +244,35 @@ function demoApi() {
     { id: uid(), user_id: 'u3', body: 'Feed já está na revisão interna 🙌', created_at: iso(2.5 * 3600e3) },
     { id: uid(), user_id: 'u5', body: 'Vou agendar os posts do Café Grão depois do almoço.', created_at: iso(3600e3) }
   ];
+  // relatórios de exemplo
+  const seeded = (seed) => () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+  function fakeReport(c, since, until) {
+    const rnd = seeded(since.split('-').join('') % 9973);
+    const days = Math.round((Date.parse(until) - Date.parse(since)) / 864e5) + 1;
+    const daily = [...Array(days)].map((_, i) => ({ date: addDays(since, i), value: Math.round(400 + rnd() * 900 + (i % 7 === 5 ? 700 : 0)) }));
+    const tot = (k, base) => Math.round(base * (0.8 + rnd() * 0.5));
+    const types = ['feed', 'carrossel', 'reels', 'reels', 'carrossel', 'feed', 'story', 'reels'];
+    const imgs = ['assets/img/bg-branco.jpg', 'assets/img/og-elevate.jpg', 'assets/img/icon-512.png'];
+    const ig = {
+      username: c.ig_username || c.instagram || 'cliente', followers: 5321, totals: { reach: tot('r', 21000), views: tot('v', 64000), accounts_engaged: tot('e', 1900), total_interactions: tot('i', 3400), likes: tot('l', 2800), comments: tot('c', 240), shares: tot('s', 180), saves: tot('sv', 310), profile_views: tot('pv', 1500), profile_links_taps: tot('pl', 120), follows: 140, unfollows: 32 },
+      prevTotals: { reach: 18000, views: 61000, accounts_engaged: 2100, total_interactions: 3000, likes: 2500, comments: 260, shares: 150, saves: 280, profile_views: 1400, profile_links_taps: 90 },
+      daily, errors: [],
+      posts: types.map((t, i) => ({ id: 'p' + i, type: t, caption: ['Café da manhã com vista pro mar ☀️', 'Conheça nossas suítes renovadas', 'Bastidores do fim de semana', 'Promoção de feriado: 3 noites pelo preço de 2', 'Roteiro: 5 praias perto da pousada', 'Depoimento de hóspede', 'Story: check-in', 'Pôr do sol de ontem'][i], date: addDays(since, Math.min(days - 1, i * 3 + 1)) + 'T15:00:00Z', permalink: 'https://www.instagram.com/', thumb: imgs[i % 3], likes: Math.round(80 + rnd() * 400), comments: Math.round(rnd() * 40), reach: Math.round(900 + rnd() * 5000), saves: Math.round(rnd() * 60), shares: Math.round(rnd() * 30) }))
+    };
+    const fb = { name: c.fb_page_name || c.name, followers: 1830, totals: { page_media_view: tot('fv', 9800), page_post_engagements: tot('fe', 640), page_daily_follows_unique: 24 }, prevTotals: { page_media_view: 10400, page_post_engagements: 590, page_daily_follows_unique: 18 }, daily: daily.map((x) => ({ date: x.date, value: Math.round(x.value / 3) })), errors: [],
+      posts: [0, 1, 2, 3].map((i) => ({ id: 'f' + i, caption: ['Pacote de fim de ano já disponível', 'Nossa piscina aquecida', 'Vagas para o Réveillon', 'Bem-vindos, novos hóspedes!'][i], date: addDays(since, i * 6 + 2) + 'T12:00:00Z', permalink: 'https://www.facebook.com/', thumb: imgs[(i + 1) % 3], reactions: Math.round(20 + rnd() * 120), comments: Math.round(rnd() * 20), shares: Math.round(rnd() * 10) })) };
+    const len = days;
+    return { client: { id: c.id, name: c.name, logo_url: c.logo_url }, since, until, prev: { since: addDays(since, -len), until: addDays(since, -1) }, ig, fb, generated_at: new Date().toISOString() };
+  }
+  const demoReports = [];
+  [1, 2].forEach((k) => {
+    const first = new Date(); first.setUTCDate(1); first.setUTCMonth(first.getUTCMonth() - k);
+    const since = first.toISOString().slice(0, 10);
+    const end = new Date(first); end.setUTCMonth(end.getUTCMonth() + 1); end.setUTCDate(0);
+    const until = end.toISOString().slice(0, 10);
+    const c = clients.find((x) => x.id === 'c3');
+    demoReports.push({ id: 'rep' + k, client_id: 'c3', kind: 'mensal', period_start: since, period_end: until, created_at: new Date().toISOString(), data: fakeReport(c, since, until) });
+  });
   let me = people[0];
   const isRev = () => ['admin', 'gestora', 'social_media'].includes(me.role);
   const isMgr = () => ['admin', 'gestora'].includes(me.role);
@@ -328,9 +373,19 @@ function demoApi() {
       const cli = clients.find((c) => c.id === x.client_id);
       tasks.filter((k) => k.root_id === x.root_id).forEach((k) => Object.assign(k, { post_at: postAt, caption, post_format: format || null, scheduled_at: new Date().toISOString(), scheduled_by: me.id, publish_status: cli?.ig_user_id ? 'fila' : null, publish_error: '' }));
     },
+    async reports(clientId) { return wait(demoReports.filter((r) => r.client_id === clientId)); },
+    async lastReports() { return wait(demoReports); },
+    async report(id) { return wait(demoReports.find((r) => r.id === id)); },
+    async deleteReport(id) { demoReports.splice(demoReports.findIndex((r) => r.id === id), 1); },
+    async generateReport(clientId, since, until, kind = 'personalizado') {
+      await new Promise((r) => setTimeout(r, 700));
+      const c = clients.find((k) => k.id === clientId);
+      const r = { id: uid(), client_id: clientId, kind, period_start: since, period_end: until, created_at: new Date().toISOString(), data: fakeReport(c, since, until) };
+      demoReports.unshift(r); return wait(r);
+    },
     async igAccounts() {
       await new Promise((r) => setTimeout(r, 500));
-      return [{ id: '17841400000000001', username: 'a2pousada', page: 'A2 Pousada', picture: '' }, { id: '17841400000000002', username: 'fisioclinic', page: 'Fisioclinic', picture: '' }];
+      return [{ id: '17841400000000001', username: 'a2pousadaap', page: 'A2 Pousada', page_id: '1001', picture: '' }, { id: '17841400000000002', username: 'fisioclinic', page: 'Fisioclinic', page_id: '1002', picture: '' }, { id: '', username: '', page: 'Conta Livre', page_id: '1009', picture: '' }];
     },
     async publishNow(id) {
       const x = tasks.find((k) => k.id === id);

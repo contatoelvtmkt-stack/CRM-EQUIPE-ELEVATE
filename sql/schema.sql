@@ -36,6 +36,22 @@ alter table public.clients add column if not exists instagram text;
 -- conta do Instagram usada para publicar (vinculada pelo token do usuário do sistema)
 alter table public.clients add column if not exists ig_user_id  text;
 alter table public.clients add column if not exists ig_username text;
+alter table public.clients add column if not exists fb_page_id  text;
+alter table public.clients add column if not exists fb_page_name text;
+
+-- ---------- Relatórios (Instagram e Facebook) ---------------------------
+create table if not exists public.reports (
+  id           uuid primary key default gen_random_uuid(),
+  client_id    uuid not null references public.clients(id) on delete cascade,
+  kind         text not null default 'personalizado' check (kind in ('mensal','personalizado')),
+  period_start date not null,
+  period_end   date not null,
+  data         jsonb not null default '{}',
+  created_by   uuid references public.profiles(id) on delete set null,
+  created_at   timestamptz not null default now(),
+  unique (client_id, kind, period_start, period_end)
+);
+create index if not exists reports_client on public.reports (client_id, period_start desc);
 
 -- ---------- Tarefas ---------------------------------------------------
 create table if not exists public.tasks (
@@ -549,6 +565,12 @@ create policy "apagar tarefas" on public.tasks for delete to authenticated
 drop policy if exists "ver estrelas" on public.star_days;
 create policy "ver estrelas" on public.star_days for select to authenticated using (public.is_member());
 
+alter table public.reports enable row level security;
+drop policy if exists "ver relatorios" on public.reports;
+create policy "ver relatorios" on public.reports for select to authenticated using (public.is_reviewer());
+drop policy if exists "apagar relatorios" on public.reports;
+create policy "apagar relatorios" on public.reports for delete to authenticated using (public.is_manager());
+
 alter table public.approval_links enable row level security;
 drop policy if exists "ver links" on public.approval_links;
 create policy "ver links" on public.approval_links for select to authenticated using (public.is_reviewer());
@@ -602,6 +624,7 @@ grant execute on function public.confirm_schedule(uuid, timestamptz, text, text)
 grant execute on function public.unconfirm_schedule(uuid) to authenticated;
 grant execute on function public.publish_now(uuid) to authenticated;
 grant select on public.approval_links to authenticated;
+grant select, delete on public.reports to authenticated;
 grant execute on function public.new_approval_link(uuid) to authenticated;
 grant usage on schema public to anon;
 grant execute on function public.get_approval(text) to anon, authenticated;

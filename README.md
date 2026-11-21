@@ -60,6 +60,12 @@ Configuração (uma vez):
 4. Rodar `sql/cron.sql` no SQL Editor.
 5. No CRM: *Equipe → Clientes →* botão do Instagram *→ Buscar contas liberadas* e escolher a conta de cada cliente.
 
+## Relatórios de Instagram e Facebook
+
+Menu **Relatórios** (admin, gestora e social media): uma aba por cliente com os relatórios salvos. Todo dia 1 o CRM gera sozinho o relatório do mês anterior de cada cliente vinculado; também dá para gerar por período. **Exportar PDF** abre a impressão em A4 deitado (escolha "Salvar como PDF").
+
+Configuração: publicar a função `meta-report` (Edge Functions → Via Editor, com verificação de JWT desligada) e rodar `sql/cron.sql` de novo para ligar a geração mensal. Para as métricas da página do Facebook, o token precisa também da permissão `read_insights`.
+
 ## Testar sem banco
 
 Abra o site com `?demo` no fim do endereço (ex.: `index.html?demo`) para navegar com dados de exemplo.

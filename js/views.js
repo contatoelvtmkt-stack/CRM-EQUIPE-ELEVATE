@@ -1,3 +1,4 @@
+import { renderReport, periodLabel } from './report.js';
 import { api, todayBR, addDays } from './api.js';
 import { AVATARS, avatarSVG, avatarName, runnerSVG, TURTLE_SVG } from './avatars.js';
 import {
@@ -506,9 +507,10 @@ export async function viewEquipe(tab = 'pessoas') {
 function igSheet(cl, clients) {
   openSheet(`
     <div class="sheet-head"><div><small class="muted">Instagram do cliente</small><h2>${esc(cl.name)}</h2></div><button class="icon-btn" data-close aria-label="Fechar">${I.x}</button></div>
-    ${cl.ig_user_id ? `<div class="pub card glow"><div class="pub-h"><b>${I.check} Vinculado para publicar</b></div>
-      <p style="margin-top:8px">@${esc(cl.ig_username || '')} <small class="muted">(ID ${esc(cl.ig_user_id)})</small></p></div>` : ''}
-    <p class="muted" style="font-size:13px;line-height:1.5;margin-bottom:12px">Escolha a conta que o CRM vai usar para publicar. A lista mostra as contas liberadas para o usuário do sistema "CRM Elevate" no Gerenciador de Negócios.</p>
+    ${cl.ig_user_id || cl.fb_page_id ? `<div class="pub card glow"><div class="pub-h"><b>${I.check} Vinculado</b></div>
+      ${cl.ig_user_id ? `<p style="margin-top:8px">Instagram: @${esc(cl.ig_username || '')} <small class="muted">(publicação e relatórios)</small></p>` : ''}
+      ${cl.fb_page_id ? `<p style="margin-top:4px">Facebook: ${esc(cl.fb_page_name || cl.fb_page_id)} <small class="muted">(relatórios)</small></p>` : ''}</div>` : ''}
+    <p class="muted" style="font-size:13px;line-height:1.5;margin-bottom:12px">Escolha a conta do cliente. Ela é usada para publicar no Instagram e para os relatórios de Instagram e Facebook. A lista mostra o que foi liberado para o usuário do sistema "CRM Elevate" no Gerenciador de Negócios.</p>
     <button class="btn btn-white" id="ig-load">${I.insta} Buscar contas liberadas</button>
     <div class="list" id="ig-list" style="margin-top:12px"></div>
     <details style="margin-top:16px"><summary class="muted" style="font-size:13px;cursor:pointer">Preencher manualmente</summary>
@@ -517,33 +519,37 @@ function igSheet(cl, clients) {
       <button class="btn btn-ghost" id="ig-save">Salvar</button>
     </details>
     <div class="err" id="ig-err" style="margin-top:10px"></div>
-    ${cl.ig_user_id ? `<div class="actions"><button class="btn btn-ghost" id="ig-unlink" style="color:var(--red-hi)">Desvincular</button></div>` : ''}`,
+    ${cl.ig_user_id || cl.fb_page_id ? `<div class="actions"><button class="btn btn-ghost" id="ig-unlink" style="color:var(--red-hi)">Desvincular</button></div>` : ''}`,
   (root, close) => {
-    const link = async (id, username) => {
+    const link = async (id, username, pageId, pageName) => {
       const clean = (username || '').replace(/^@+/, '').trim();
-      const other = clients.find((x) => x.ig_user_id === id && x.id !== cl.id);
+      const other = id && clients.find((x) => x.ig_user_id === id && x.id !== cl.id);
       if (other && !confirm(`Esta conta já está vinculada a ${other.name}. Vincular também a ${cl.name}?`)) return;
-      await api.updateClient(cl.id, { ig_user_id: id || null, ig_username: clean || null, instagram: clean || cl.instagram || null });
-      close(); toast(id ? `${cl.name} vai publicar em @${clean}.` : 'Instagram desvinculado.'); viewEquipe('clientes');
+      const patch = { ig_user_id: id || null, ig_username: clean || null, instagram: clean || cl.instagram || null };
+      if (pageId !== undefined) { patch.fb_page_id = pageId || null; patch.fb_page_name = pageName || null; }
+      await api.updateClient(cl.id, patch);
+      close();
+      toast(id ? `${cl.name} vinculado a @${clean}${pageName ? ' e à página ' + pageName : ''}.` : pageId ? `${cl.name} vinculado à página ${pageName}.` : 'Desvinculado.');
+      viewEquipe('clientes');
     };
     $('#ig-load', root).onclick = (e) => busy(e.currentTarget, async () => {
       $('#ig-err', root).textContent = '';
       try {
         const accs = await api.igAccounts();
         $('#ig-list', root).innerHTML = accs.length ? accs.map((a) => `
-          <button class="person card" data-acc="${esc(a.id)}" data-user="${esc(a.username)}">
+          <button class="person card" data-acc="${esc(a.id)}" data-user="${esc(a.username)}" data-page="${esc(a.page_id || '')}" data-pname="${esc(a.page || '')}">
             ${a.picture ? `<img src="${esc(a.picture)}" width="40" height="40" alt="" style="object-fit:cover">` : `<span class="client-logo" style="width:40px;height:40px">${I.insta}</span>`}
-            <span class="info"><b>@${esc(a.username)}</b><small>${a.page ? esc(a.page) + ' · ' : ''}ID ${esc(a.id)}</small></span>${cl.ig_user_id === a.id ? `<span class="tag solid">${I.check}</span>` : ''}
+            <span class="info"><b>${a.username ? '@' + esc(a.username) : esc(a.page)}</b><small>${a.username ? (a.page ? 'Página: ' + esc(a.page) : 'Sem página do Facebook') : 'Só página do Facebook (sem Instagram ligado)'}</small></span>${(a.id && cl.ig_user_id === a.id) || (!a.id && cl.fb_page_id === a.page_id) ? `<span class="tag solid">${I.check}</span>` : ''}
           </button>`).join('') : '<p class="muted" style="font-size:13px">Nenhuma conta liberada ainda. Confira se a conta foi atribuída ao usuário do sistema CRM Elevate.</p>';
       } catch (er) { $('#ig-err', root).textContent = er.message; }
     });
-    $('#ig-list', root).onclick = (e) => { const b = e.target.closest('[data-acc]'); if (b) link(b.dataset.acc, b.dataset.user).catch((er) => ($('#ig-err', root).textContent = er.message)); };
+    $('#ig-list', root).onclick = (e) => { const b = e.target.closest('[data-acc]'); if (b) link(b.dataset.acc, b.dataset.user, b.dataset.page, b.dataset.pname).catch((er) => ($('#ig-err', root).textContent = er.message)); };
     $('#ig-save', root).onclick = () => {
       const id = $('#ig-id', root).value.trim();
       if (id && !/^\d{5,}$/.test(id)) return ($('#ig-err', root).textContent = 'O ID é só números (ex.: 17841400000000000).');
       link(id, $('#ig-user', root).value).catch((er) => ($('#ig-err', root).textContent = er.message));
     };
-    const un = $('#ig-unlink', root); if (un) un.onclick = () => link('', '').catch((er) => ($('#ig-err', root).textContent = er.message));
+    const un = $('#ig-unlink', root); if (un) un.onclick = () => link('', '', '', '').catch((er) => ($('#ig-err', root).textContent = er.message));
   });
 }
 
@@ -670,4 +676,151 @@ export function viewMais(items) {
   bindCommon();
   $('#how2').onclick = () => window.dispatchEvent(new Event('elvt:onboarding'));
   $('#out2').onclick = () => api.signOut();
+}
+
+// =====================================================================
+// RELATÓRIOS (Instagram e Facebook) — admin, gestora e social media
+// =====================================================================
+
+const isoToday = () => todayBR();
+const monthRange = (offset) => {
+  const [y, m] = isoToday().split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + offset, 1));
+  const since = d.toISOString().slice(0, 10);
+  const end = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
+  return [since, end > isoToday() ? isoToday() : end];
+};
+const QUICK = [
+  ['Mês passado', () => monthRange(-1)],
+  ['Este mês', () => monthRange(0)],
+  ['Últimos 30 dias', () => [addDays(isoToday(), -30), addDays(isoToday(), -1)]],
+  ['Últimos 7 dias', () => [addDays(isoToday(), -7), addDays(isoToday(), -1)]]
+];
+
+export async function viewRelatorios() {
+  if (state.relClient) return viewRelCliente(state.relClient);
+  const [clients, last] = await Promise.all([api.clients(), api.lastReports().catch(() => [])]);
+  state.clients = clients;
+  const active = clients.filter((c) => c.active);
+  const lastBy = {};
+  last.forEach((r) => { if (!lastBy[r.client_id]) lastBy[r.client_id] = r; });
+  view().innerHTML = `${topBar('Instagram e Facebook', 'Relatórios', '')}
+    <div class="page">
+      <p class="muted rise" style="font-size:13px;line-height:1.5;margin:6px 0 14px">Todo dia 1 o CRM gera sozinho o relatório do mês anterior de cada cliente vinculado. Você também pode gerar por datas.</p>
+      <div class="rep-clients">${active.map((c, i) => {
+        const linked = c.ig_user_id || c.fb_page_id;
+        const r = lastBy[c.id];
+        return `<button class="rep-item card rise" style="--i:${i}" data-cl="${c.id}">
+          <span class="client-logo" style="width:46px;height:46px">${c.logo_url ? `<img src="${esc(c.logo_url)}" alt="">` : I.building}</span>
+          <span class="info"><b>${esc(c.name)}</b><small>${linked ? `${c.ig_username ? '@' + esc(c.ig_username) : ''}${c.ig_username && c.fb_page_id ? ' · ' : ''}${c.fb_page_id ? 'Facebook' : ''}` : 'Instagram não vinculado'}${r ? ` · último: ${periodLabel(r.period_start, r.period_end)}` : ''}</small></span>
+          ${I.arrow}</button>`;
+      }).join('') || emptyBox('Nenhum cliente cadastrado.')}</div>
+    </div>`;
+  bindCommon();
+  view().querySelector('.rep-clients').onclick = (e) => { const b = e.target.closest('[data-cl]'); if (b) { state.relClient = b.dataset.cl; viewRelCliente(b.dataset.cl); } };
+}
+
+async function viewRelCliente(id) {
+  const c = state.clients.find((x) => x.id === id) || (await api.clients()).find((x) => x.id === id);
+  if (!c) { state.relClient = null; return viewRelatorios(); }
+  const list = await api.reports(id).catch(() => []);
+  const linked = c.ig_user_id || c.fb_page_id;
+  const [qs, qu] = QUICK[0][1]();
+  view().innerHTML = `
+    <header class="top rise">
+      <button class="icon-btn" id="rel-back" aria-label="Voltar">${I.back}</button>
+      <div class="hello"><small>Relatórios</small><h1>${esc(c.name)}</h1></div>
+    </header>
+    <div class="page">
+      <div class="dash">
+        <div class="col-a">
+          <section class="rep-gen card glow rise" style="--i:1">
+            <h3 style="font-weight:500;margin-bottom:12px">Gerar relatório por período</h3>
+            ${linked ? `
+            <div class="rep-quick" id="rq">${QUICK.map(([l], i) => `<button type="button" data-q="${i}" class="${i === 0 ? 'on' : ''}">${l}</button>`).join('')}</div>
+            <div class="row2">
+              <div class="field"><label for="r-s">De</label><input class="input" type="date" id="r-s" value="${qs}" max="${isoToday()}"></div>
+              <div class="field"><label for="r-u">Até</label><input class="input" type="date" id="r-u" value="${qu}" max="${isoToday()}"></div>
+            </div>
+            <div class="err" id="r-err"></div>
+            <button class="btn btn-red" id="r-go">Gerar relatório ${I.arrow}</button>
+            <p class="muted" style="font-size:12px;margin-top:10px;line-height:1.45">Busca os dados direto da Meta. Pode levar até 1 minuto.</p>`
+            : `<p class="just" style="line-height:1.5">Vincule o Instagram e a página do Facebook deste cliente em Equipe → Clientes para gerar relatórios.</p>`}
+          </section>
+        </div>
+        <div class="col-b">
+          <div class="section-title"><h2>Relatórios salvos</h2><span>${list.length}</span></div>
+          <div class="rep-list" id="rl">${list.length ? list.map((r, i) => `
+            <button class="rep-item card rise" style="--i:${i}" data-r="${r.id}">
+              <span class="ic">${I.chart}</span>
+              <span class="info"><b>${periodLabel(r.period_start, r.period_end)}</b><small>${r.kind === 'mensal' ? 'Mensal automático' : 'Período personalizado'} · gerado ${ago(r.created_at)}</small></span>
+              ${I.arrow}</button>`).join('') : emptyBox('Nenhum relatório ainda.<br>Gere o primeiro ao lado.')}</div>
+        </div>
+      </div>
+    </div>`;
+  countUp(view());
+  $('#rel-back').onclick = () => { state.relClient = null; viewRelatorios(); };
+  $('#rl').onclick = async (e) => {
+    const b = e.target.closest('[data-r]'); if (!b) return;
+    try { openReport(await api.report(b.dataset.r), () => viewRelCliente(id)); } catch (er) { toast(er.message); }
+  };
+  const rq = $('#rq');
+  if (rq) {
+    rq.onclick = (e) => {
+      const b = e.target.closest('[data-q]'); if (!b) return;
+      const [s, u] = QUICK[+b.dataset.q][1]();
+      $('#r-s').value = s; $('#r-u').value = u;
+      rq.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+    };
+    $('#r-go').onclick = (e) => {
+      const s = $('#r-s').value, u = $('#r-u').value;
+      if (!s || !u) return ($('#r-err').textContent = 'Escolha as duas datas.');
+      if (s > u) return ($('#r-err').textContent = 'A data inicial é depois da final.');
+      $('#r-err').textContent = '';
+      busy(e.currentTarget, async () => {
+        try { const r = await api.generateReport(id, s, u); openReport(r, () => viewRelCliente(id)); }
+        catch (er) { $('#r-err').textContent = er.message; }
+      });
+    };
+  }
+}
+
+// Visualizador do relatório (tela cheia) + exportar PDF na horizontal
+function openReport(r, onClose) {
+  const d = r.data;
+  const el = document.createElement('div');
+  el.className = 'rep-view';
+  el.innerHTML = `
+    <div class="rep-bar">
+      <button class="icon-btn" data-x aria-label="Voltar">${I.back}</button>
+      <div class="t"><b>${esc(d.client.name)}</b><small>${periodLabel(d.since, d.until)}</small></div>
+      ${isManager() ? `<button class="icon-btn" data-del aria-label="Excluir relatório" title="Excluir">${I.x}</button>` : ''}
+      <button class="btn btn-red btn-sm" data-pdf>${I.file} Exportar PDF</button>
+    </div>
+    <div class="rep-scroll"><div class="rep-pages">${renderReport(d).replace(/<section class="rep-page">/g, '<div class="rep-fit"><section class="rep-page">').replace(/<\/section>/g, '</section></div>')}</div></div>`;
+  document.body.appendChild(el);
+  document.body.style.overflow = 'hidden';
+  const fit = () => {
+    const w = el.querySelector('.rep-scroll').clientWidth - 2 * parseInt(getComputedStyle(document.documentElement).getPropertyValue('--gutter') || 16, 10);
+    el.style.setProperty('--s', Math.min(1, w / 1123).toFixed(4));
+  };
+  fit(); window.addEventListener('resize', fit);
+  const close = () => { window.removeEventListener('resize', fit); el.remove(); document.body.style.overflow = ''; onClose && onClose(); };
+  el.querySelector('[data-x]').onclick = close;
+  const onKey = (e) => { if (e.key === 'Escape') { document.removeEventListener('keydown', onKey); close(); } };
+  document.addEventListener('keydown', onKey);
+  const del = el.querySelector('[data-del]');
+  if (del) del.onclick = async () => { if (!confirm('Excluir este relatório?')) return; try { await api.deleteReport(r.id); toast('Relatório excluído.'); close(); } catch (er) { toast(er.message); } };
+  el.querySelector('[data-pdf]').onclick = async () => {
+    const pr = $('#print-root');
+    pr.innerHTML = renderReport(d);
+    // espera as imagens antes de abrir a impressão
+    await Promise.all([...pr.querySelectorAll('img')].map((img) => (img.complete ? null : new Promise((res) => { img.onload = img.onerror = res; setTimeout(res, 4000); }))));
+    const prevTitle = document.title;
+    document.title = `Relatório ${d.client.name} - ${periodLabel(d.since, d.until)}`;
+    toast('Na janela de impressão, escolha "Salvar como PDF".');
+    const done = () => { document.title = prevTitle; pr.innerHTML = ''; };
+    window.addEventListener('afterprint', done, { once: true });
+    setTimeout(() => window.print(), 300);
+  };
 }

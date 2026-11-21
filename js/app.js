@@ -3,7 +3,7 @@ import { JEREMIAS_SVG, TURTLE_SVG } from './avatars.js';
 import { ONBOARDING_EVERY_MIN, JEREMIAS_EVERY_MIN } from './config.js';
 import { I, state, isManager, isReviewer, $, esc, face, toast, busy, hideTip, ROLES } from './ui.js';
 import { taskCard, newTaskSheet } from './tasks.js';
-import { viewHoje, viewPainel, viewFluxo, viewRanking, viewChat, viewEnergia, viewEquipe, viewPerfil, viewMais } from './views.js';
+import { viewHoje, viewPainel, viewFluxo, viewRanking, viewChat, viewEnergia, viewEquipe, viewPerfil, viewMais, viewRelatorios } from './views.js';
 
 const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -84,7 +84,7 @@ function renderWaiting() {
 // ---------------------------------------------------------------------
 function menuItems() {
   const items = [['hoje', 'Hoje', I.home], ['painel', 'Painel', I.chart]];
-  if (isReviewer()) items.push(['fluxo', 'Fluxo de conteúdo', I.flow]);
+  if (isReviewer()) items.push(['fluxo', 'Fluxo de conteúdo', I.flow], ['relatorios', 'Relatórios', I.report]);
   items.push(['ranking', 'Ranking', I.trophy], ['chat', 'Chat da equipe', I.chat]);
   if (isManager()) items.push(['energia', 'Energia do time', I.bolt], ['equipe', 'Equipe e clientes', I.team]);
   items.push(['perfil', 'Perfil', I.user]);
@@ -122,9 +122,10 @@ async function render() {
   }));
   const views = {
     hoje: viewHoje, painel: viewPainel, fluxo: viewFluxo, ranking: viewRanking, chat: viewChat,
-    energia: viewEnergia, equipe: viewEquipe, perfil: viewPerfil, mais: () => viewMais(moreItems)
+    energia: viewEnergia, equipe: viewEquipe, perfil: viewPerfil, relatorios: viewRelatorios, mais: () => viewMais(moreItems)
   };
-  if ((state.tab === 'fluxo' && !isReviewer()) || (['energia', 'equipe'].includes(state.tab) && !isManager())) state.tab = 'hoje';
+  if (state.tab !== 'relatorios') state.relClient = null;
+  if ((['fluxo', 'relatorios'].includes(state.tab) && !isReviewer()) || (['energia', 'equipe'].includes(state.tab) && !isManager())) state.tab = 'hoje';
   try { await views[state.tab](); } catch (e) { toast(e.message); }
 }
 

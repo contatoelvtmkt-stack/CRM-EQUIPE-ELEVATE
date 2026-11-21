@@ -1,8 +1,10 @@
 import { api, todayBR } from './api.js';
 import {
-  I, PRIOS, STATUS, STAGE, ROLES, state, isManager, isReviewer, person, clientName, $, esc, firstName,
-  fmtShort, isLate, ago, face, toast, openSheet, busy
+  I, PRIOS, STATUS, STAGE, ROLES, FORMATS, state, isManager, isReviewer, person, clientName, $, esc, firstName,
+  fmtShort, fmtPost, toLocalInput, fromLocalInput, isLate, ago, face, toast, openSheet, busy
 } from './ui.js';
+
+const clientOf = (id) => state.clients.find((c) => c.id === id) || null;
 
 // ---------------------------------------------------------------------
 // Cartão de tarefa (lista do dia)
@@ -38,6 +40,8 @@ export function kCard(t, i = 0) {
   return `<button class="kcard card rise" style="--i:${i}" data-id="${t.id}">
     <span class="top-row"><span>${cl ? esc(cl) : 'Sem cliente'}</span><span class="tag p-${t.priority}">${PRIOS[t.priority]}</span></span>
     <h4>${esc(t.title)}</h4>
+    ${t.post_format || t.post_at ? `<span class="meta" style="margin-top:6px">${t.post_format ? `<span class="tag">${FORMATS[t.post_format]}</span>` : ''}${t.post_at ? `<span class="tag">${I.calendar}${fmtPost(t.post_at)}</span>` : ''}</span>` : ''}
+    ${t.stage === 'agendamento' ? `<span class="meta" style="margin-top:6px">${t.scheduled_at ? `<span class="tag solid">${I.check} Agendado</span>` : '<span class="tag late">Aguardando confirmação</span>'}</span>` : ''}
     ${t.stage === 'em_alteracao' && t.review_note ? `<p class="note">${esc(t.review_note)}</p>` : ''}
     <span class="foot">${face(p, 22)}<span>${esc(firstName(p.name))}</span><span class="tag ${isLate(t) && t.stage !== 'concluido' ? 'late' : ''}">${I.clock}${ago(t.stage_at)}</span></span>
   </button>`;
@@ -153,8 +157,33 @@ export function taskSheet(t, onDone) {
   const flowActions = {
     revisao_interna: [['aprovar', 'Aprovar e enviar ao cliente', 'btn-red'], ['alterar', 'Pedir alteração', 'btn-ghost']],
     revisao_cliente: [['aprovar', 'Cliente aprovou', 'btn-red'], ['alterar', 'Cliente pediu alteração', 'btn-ghost']],
-    agendamento: [['aprovar', 'Marcar como postado', 'btn-red']]
   }[t.stage] || [];
+  const cli = clientOf(t.client_id);
+  const fmtSel = t.post_format || '';
+  const pubInfo = t.post_format || t.post_at || t.caption ? `
+    <div class="pub card">
+      <div class="pub-h"><b>${I.insta} Publicação</b>${cli?.instagram ? `<span class="muted">@${esc(cli.instagram)}</span>` : ''}</div>
+      <div class="meta">${t.post_format ? `<span class="tag">${FORMATS[t.post_format]}</span>` : ''}${t.post_at ? `<span class="tag">${I.calendar}${fmtPost(t.post_at)}</span>` : ''}${t.scheduled_at ? `<span class="tag solid">${I.check} Agendado</span>` : ''}</div>
+      ${t.caption ? `<p class="pub-cap">${esc(t.caption)}</p>` : ''}
+    </div>` : '';
+  const schedBlock = rev && t.stage === 'agendamento' ? (t.scheduled_at ? `
+    <div class="pub card glow" id="sched">
+      <div class="pub-h"><b>${I.check} Agendamento confirmado</b><span class="muted">por ${esc(firstName(person(t.scheduled_by).name))}</span></div>
+      <p style="margin-top:8px;line-height:1.5">${FORMATS[t.post_format] || 'Post'} para <b>${fmtPost(t.post_at)}</b>${cli?.instagram ? ` no <b>@${esc(cli.instagram)}</b>` : ''}.</p>
+      ${t.caption ? `<p class="pub-cap">${esc(t.caption)}</p>` : ''}
+      <div class="err" id="sc-err"></div>
+      <div class="actions" style="margin-top:10px"><button class="btn btn-red" id="posted">Marcar como postado ${I.arrow}</button><button class="btn btn-ghost" id="unsched">Editar agendamento</button></div>
+    </div>` : `
+    <div class="pub card glow" id="sched">
+      <div class="pub-h"><b>${I.calendar} Confirmar agendamento nas redes</b></div>
+      <p class="muted" style="font-size:13px;margin:6px 0 12px;line-height:1.45">O cliente aprovou. Confira os dados e confirme para agendar ${cli?.instagram ? `no <b style="color:var(--white)">@${esc(cli.instagram)}</b>` : 'no Instagram do cliente'}.</p>
+      ${cli && !cli.instagram ? `<p class="just" style="margin-bottom:12px">Este cliente ainda não tem o @ do Instagram. Cadastre em Equipe → Clientes.</p>` : ''}
+      <div class="field"><label>Formato</label><div class="seg" id="sc-fmt">${Object.entries(FORMATS).map(([k, v]) => `<button type="button" data-v="${k}" class="${fmtSel === k ? 'on' : ''}">${v}</button>`).join('')}</div></div>
+      <div class="field"><label for="sc-at">Data e hora da postagem</label><input class="input" type="datetime-local" id="sc-at" value="${toLocalInput(t.post_at)}"></div>
+      <div class="field"><label for="sc-cap">Legenda</label><textarea class="input" id="sc-cap" rows="5" maxlength="2200">${esc(t.caption || '')}</textarea></div>
+      <div class="err" id="sc-err"></div>
+      <div class="actions" style="margin-top:4px"><button class="btn btn-red" id="sc-ok">Confirmar agendamento ${I.arrow}</button></div>
+    </div>`) : '';
 
   openSheet(`
     <div class="sheet-head"><div><small class="muted">${cl ? esc(cl) + ' · ' : ''}${STAGE[t.stage]}</small><h2>${esc(t.title)}</h2></div><button class="icon-btn" data-close aria-label="Fechar">${I.x}</button></div>
@@ -168,6 +197,7 @@ export function taskSheet(t, onDone) {
     ${t.description ? `<p style="line-height:1.5;margin-bottom:16px;color:#cfcfcf;white-space:pre-wrap">${esc(t.description)}</p>` : ''}
     ${t.review_note && ['em_alteracao'].includes(t.stage) ? `<p class="just alt" style="border-left:2px solid var(--white);padding-left:10px;margin-bottom:16px;line-height:1.5"><b>Ajuste pedido:</b> ${esc(t.review_note)}</p>` : ''}
     ${!mine ? `<div class="person card" style="margin-bottom:16px">${face(p, 36)}<span class="info"><b>${esc(p.name)}</b><small>${ROLES[p.role]}</small></span></div>` : ''}
+    ${schedBlock || pubInfo}
 
     ${rev && flowActions.length ? `
     <div class="section-title" style="margin-top:8px"><h2>Fluxo de conteúdo</h2><span>${STAGE[t.stage]}</span></div>
@@ -198,6 +228,26 @@ export function taskSheet(t, onDone) {
   (root, close) => {
     attachmentsBlock(root, t.root_id || t.id);
     if ($('#appr', root)) approvalBlock(root, t);
+    const fmt = $('#sc-fmt', root); let scFmt = fmtSel;
+    if (fmt) fmt.onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b) return; scFmt = b.dataset.v; fmt.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); };
+    const scOk = $('#sc-ok', root);
+    if (scOk) scOk.onclick = () => {
+      const at = $('#sc-at', root).value;
+      if (!scFmt) return ($('#sc-err', root).textContent = 'Escolha o formato.');
+      if (!at) return ($('#sc-err', root).textContent = 'Informe a data e a hora da postagem.');
+      busy(scOk, async () => {
+        try { await api.confirmSchedule(t.id, fromLocalInput(at), $('#sc-cap', root).value.trim(), scFmt); close(); toast(`Agendamento confirmado para ${fmtPost(fromLocalInput(at))}.`); done(); }
+        catch (er) { $('#sc-err', root).textContent = er.message; }
+      });
+    };
+    const posted = $('#posted', root);
+    if (posted) posted.onclick = () => busy(posted, async () => {
+      try { await api.review(t.id, 'aprovar'); close(); toast('Postado! Conteúdo concluído.'); done(); } catch (er) { $('#sc-err', root).textContent = er.message; }
+    });
+    const uns = $('#unsched', root);
+    if (uns) uns.onclick = () => busy(uns, async () => {
+      try { await api.unconfirmSchedule(t.id); close(); taskSheet({ ...t, scheduled_at: null, scheduled_by: null }, onDone); } catch (er) { $('#sc-err', root).textContent = er.message; }
+    });
     const so = $('#so', root);
     if (so) {
       so.onclick = (e) => {
@@ -273,6 +323,13 @@ export function newTaskSheet(pre = {}, onDone) {
           <button type="button" class="btn btn-red" id="nc-ok" style="width:auto">Criar</button>
         </div></div>
       <div class="field"><label for="tf-desc">Detalhes (opcional)</label><textarea class="input" id="tf-desc" name="description" maxlength="2000">${esc(t.description)}</textarea></div>
+      <fieldset class="pub-form">
+        <legend>${I.insta} Publicação <small>(opcional)</small></legend>
+        <div class="field"><label>Formato</label>
+          <div class="seg" id="tf-fmt"><button type="button" data-v="" class="${t.post_format ? '' : 'on'}">—</button>${Object.entries(FORMATS).map(([k, v]) => `<button type="button" data-v="${k}" class="${t.post_format === k ? 'on' : ''}">${v}</button>`).join('')}</div></div>
+        <div class="field"><label for="tf-at">Data e hora da postagem</label><input class="input" type="datetime-local" id="tf-at" name="post_at" value="${toLocalInput(t.post_at)}"></div>
+        <div class="field" style="margin-bottom:0"><label for="tf-cap">Legenda</label><textarea class="input" id="tf-cap" name="caption" rows="4" maxlength="2200" placeholder="Texto que vai no post, com hashtags">${esc(t.caption || '')}</textarea></div>
+      </fieldset>
       <div class="field"><label>Prioridade</label>
         <div class="seg" id="prio">${Object.entries(PRIOS).map(([k, v]) => `<button type="button" data-v="${k}" class="${t.priority === k ? 'on' : ''}">${v}</button>`).join('')}</div></div>
       <div class="row2">
@@ -293,6 +350,8 @@ export function newTaskSheet(pre = {}, onDone) {
       <div class="actions"><button class="btn btn-red" type="submit">${editing ? 'Salvar alterações' : 'Criar tarefa'} ${I.arrow}</button></div>
     </form>`,
   (root, close) => {
+    const tfFmt = $('#tf-fmt', root);
+    tfFmt.onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b) return; t.post_format = b.dataset.v || null; tfFmt.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); };
     const seg = $('#prio', root);
     seg.onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b) return; t.priority = b.dataset.v; seg.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); };
     const who = $('#who', root);
@@ -340,7 +399,8 @@ export function newTaskSheet(pre = {}, onDone) {
       if (f.due_date < f.task_date) return ($('#tf-err', root).textContent = 'O prazo não pode ser antes da data da demanda.');
       const payload = {
         title: f.title.trim(), description: f.description.trim(), priority: t.priority, task_date: f.task_date, due_date: f.due_date,
-        assigned_to: isManager() ? t.assigned_to : state.me.id, client_id: f.client_id && f.client_id !== '__novo' ? f.client_id : null
+        assigned_to: isManager() ? t.assigned_to : state.me.id, client_id: f.client_id && f.client_id !== '__novo' ? f.client_id : null,
+        post_format: t.post_format || null, post_at: fromLocalInput(f.post_at), caption: (f.caption || '').trim()
       };
       busy(e.submitter || e.target.querySelector('[type=submit]'), async () => {
         try {

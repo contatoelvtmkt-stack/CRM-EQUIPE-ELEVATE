@@ -47,6 +47,12 @@
 .ap-info .tag svg { width: 12px; height: 12px; }
 .ap-info h2 { font-size: 24px; font-weight: 500; line-height: 1.2; margin-top: 14px; letter-spacing: -.4px; }
 .ap-desc { margin-top: 12px; color: #cfcfcf; line-height: 1.55; white-space: pre-wrap; }
+.ap-post { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.ap-post span { flex: 1 1 120px; padding: 10px 12px; background: var(--s0); border: 1px solid var(--line); }
+.ap-post small, .ap-cap small { display: block; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.ap-post b { font-weight: 500; font-size: 14px; }
+.ap-cap { margin-top: 12px; padding: 12px; background: var(--s0); border: 1px solid var(--line); border-left: 2px solid var(--red); }
+.ap-cap p { margin-top: 6px; white-space: pre-wrap; line-height: 1.55; font-size: 14px; color: #e0e0e0; }
 .ap-due { margin-top: 14px; font-size: 13px; color: var(--muted); }
 .ap-due b { color: var(--white); }
 

@@ -399,6 +399,21 @@ body.is-dragging .chips button.drop-on { border-style: solid; }
 .client-logo span { position: absolute; right: 0; bottom: 0; width: 18px; height: 18px; background: var(--red); display: grid; place-items: center; }
 .client-logo span svg { width: 11px; height: 11px; color: #fff; }
 
+/* ---------- Publicação / agendamento ---------- */
+.pub { padding: 14px; margin-bottom: 16px; }
+.pub-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 14px; }
+.pub-h b { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; }
+.pub-h svg { width: 16px; height: 16px; color: var(--red-hi); }
+.pub .meta { margin-top: 10px; }
+.pub .tag svg { width: 11px; height: 11px; }
+.pub-cap { margin-top: 10px; padding: 10px 12px; background: var(--s0); border: 1px solid var(--line); font-size: 13px; line-height: 1.5; white-space: pre-wrap; color: #d6d6d6; }
+.pub-form { border: 1px solid var(--line); padding: 14px; margin: 4px 0 14px; background: rgba(29,29,29,.5); }
+.pub-form legend { padding: 0 6px; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
+.pub-form legend svg { width: 14px; height: 14px; color: var(--red-hi); }
+.pub-form legend small { color: var(--muted); font-weight: 300; }
+.kcard .tag svg { width: 10px; height: 10px; }
+#sc-fmt button, #tf-fmt button { font-size: 12px; padding: 0 4px; }
+
 /* ---------- Link de aprovação ---------- */
 .appr { padding: 16px; margin-top: 16px; }
 .appr b { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; }

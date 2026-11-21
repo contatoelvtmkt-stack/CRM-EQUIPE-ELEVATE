@@ -473,7 +473,8 @@ export async function viewEquipe(tab = 'pessoas') {
         <div class="list grid-2">${clients.map((c, i) => `<div class="person card rise" style="--i:${i};${c.active ? '' : 'opacity:.45'}">
           <label class="client-logo" title="Enviar logo">${c.logo_url ? `<img src="${esc(c.logo_url)}" alt="">` : I.building}<span>${I.camera}</span>
             <input type="file" accept="image/*" class="sr" data-logo="${c.id}"></label>
-          <span class="info"><b>${esc(c.name)}</b><small>${c.active ? 'Ativo' : 'Arquivado'} · ${c.logo_url ? 'logo enviada' : 'toque para enviar a logo'}</small></span>
+          <span class="info"><b>${esc(c.name)}</b><small>${c.instagram ? `@${esc(c.instagram)}` : 'sem Instagram'} · ${c.active ? 'ativo' : 'arquivado'}</small></span>
+          <button class="btn btn-ghost btn-sm" data-ig="${c.id}" aria-label="Instagram de ${esc(c.name)}">${I.insta}</button>
           <button class="btn btn-ghost btn-sm" data-c="${c.id}">${c.active ? 'Arquivar' : 'Reativar'}</button></div>`).join('') || emptyBox('Nenhum cliente ainda.')}</div>`;
       body.querySelectorAll('[data-logo]').forEach((inp) => (inp.onchange = async (e) => {
         const file = e.target.files[0]; if (!file) return;
@@ -492,6 +493,15 @@ export async function viewEquipe(tab = 'pessoas') {
   $('#add').onclick = () => (tab === 'clientes' ? $('#cl-form input')?.focus() : memberSheet());
   body.onclick = async (e) => {
     const m = e.target.closest('[data-m]'); if (m) return memberSheet(all.find((p) => p.id === m.dataset.m));
+    const ig = e.target.closest('[data-ig]');
+    if (ig) {
+      const cl = clients.find((x) => x.id === ig.dataset.ig);
+      const v = prompt(`@ do Instagram de ${cl.name}:`, cl.instagram ? '@' + cl.instagram : '@');
+      if (v === null) return;
+      const handle = v.trim().replace(/^@+/, '').replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').replace(/[/?].*$/, '');
+      try { await api.updateClient(cl.id, { instagram: handle || null }); toast(handle ? `@${handle} salvo.` : 'Instagram removido.'); viewEquipe('clientes'); } catch (er) { toast(er.message); }
+      return;
+    }
     const c = e.target.closest('[data-c]');
     if (c) { const cl = clients.find((x) => x.id === c.dataset.c); await api.updateClient(cl.id, { active: !cl.active }); viewEquipe('clientes'); }
   };

@@ -19,6 +19,16 @@ export const STAGES = [
   ['revisao_cliente', 'Revisão do cliente'], ['agendamento', 'Agendamento'], ['concluido', 'Concluído']
 ];
 export const STAGE = Object.fromEntries(STAGES);
+export const FORMATS = { feed: 'Feed', carrossel: 'Carrossel', reels: 'Reels', story: 'Story' };
+// data e hora da postagem
+const pad = (n) => String(n).padStart(2, '0');
+export const toLocalInput = (iso) => { if (!iso) return ''; const d = new Date(iso); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+export const fromLocalInput = (v) => (v ? new Date(v).toISOString() : null);
+export const fmtPost = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return `${d.getDate()} ${['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'][d.getMonth()]} · ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 export const WD = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 export const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 
@@ -56,7 +66,9 @@ export const I = {
   send: p('<path d="M3 11 21 3l-6 18-3-8z"/><path d="M12 13 21 3"/>'),
   building: p('<rect x="4" y="3" width="16" height="18"/><path d="M8 7h2M14 7h2M8 11h2M14 11h2M10 21v-4h4v4"/>'),
   crown: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 7l5 4 4-7 4 7 5-4-2 12H5z"/></svg>',
-  clock: p('<rect x="3" y="3" width="18" height="18"/><path d="M12 7v5l3 2"/>')
+  clock: p('<rect x="3" y="3" width="18" height="18"/><path d="M12 7v5l3 2"/>'),
+  insta: p('<rect x="3" y="3" width="18" height="18"/><rect x="8" y="8" width="8" height="8"/><path d="M17 6.5h.5"/>'),
+  calendar: p('<rect x="3" y="5" width="18" height="16"/><path d="M3 10h18M8 3v4M16 3v4"/>')
 };
 
 // ---------------------------------------------------------------------

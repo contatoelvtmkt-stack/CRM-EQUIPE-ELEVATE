@@ -8,6 +8,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const esc = (s = '') => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const fmtDate = (d) => { const x = new Date(d); return `${x.getDate()} ${MONTHS[x.getMonth()]}`; };
+const fmtDateTime = (iso) => { const x = new Date(iso); return `${x.getDate()} ${MONTHS[x.getMonth()]} · ${String(x.getHours()).padStart(2, '0')}:${String(x.getMinutes()).padStart(2, '0')}`; };
 const fmtIso = (iso) => { const [y, m, d] = iso.split('-').map(Number); return `${d} ${MONTHS[m - 1]} ${y}`; };
 const initials = (n = '') => n.trim().split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase() || 'EL';
 
@@ -40,8 +41,9 @@ async function load() {
     return {
       state: 'aberto', expires_at: new Date(Date.now() + 6 * 86400e3).toISOString(), due_date: new Date().toISOString().slice(0, 10),
       title: 'Carrossel institucional: 5 slides',
-      description: 'Carrossel para o feed apresentando os diferenciais da clínica.\nLegenda: "Seu sorriso merece cuidado de verdade. Conheça nossa estrutura 💙"',
-      client: { name: 'Clínica Sorriso', logo_url: null },
+      description: 'Carrossel para o feed apresentando os diferenciais da clínica.',
+      client: { name: 'Clínica Sorriso', logo_url: null }, instagram: 'clinicasorriso', post_format: 'carrossel',
+      post_at: new Date(Date.now() + 3 * 86400e3).toISOString(), caption: 'Seu sorriso merece cuidado de verdade 💙\nConheça nossa estrutura e agende sua avaliação.\n\n#clinicasorriso #odontologia',
       files: [
         { kind: 'file', name: 'slide-1.jpg', path: 'assets/img/bg-branco.jpg' },
         { kind: 'file', name: 'slide-2.jpg', path: 'assets/img/og-elevate.jpg' },
@@ -155,7 +157,13 @@ function render(d) {
           <span class="tag solid">${ICON.clock} Disponível até ${fmtDate(d.expires_at)}</span>
           <h2>${esc(d.title)}</h2>
           ${d.description ? `<p class="ap-desc">${esc(d.description)}</p>` : ''}
-          ${d.due_date ? `<p class="ap-due">Prazo de entrega: <b>${fmtIso(d.due_date)}</b></p>` : ''}
+          ${d.post_at || d.post_format ? `<div class="ap-post">
+            ${d.post_format ? `<span><small>Formato</small><b>${esc({ feed: 'Feed', carrossel: 'Carrossel', reels: 'Reels', story: 'Story' }[d.post_format] || d.post_format)}</b></span>` : ''}
+            ${d.post_at ? `<span><small>Postagem prevista</small><b>${fmtDateTime(d.post_at)}</b></span>` : ''}
+            ${d.instagram ? `<span><small>Perfil</small><b>@${esc(d.instagram)}</b></span>` : ''}
+          </div>` : ''}
+          ${d.caption ? `<div class="ap-cap"><small>Legenda</small><p>${esc(d.caption)}</p></div>` : ''}
+          ${d.due_date && !d.post_at ? `<p class="ap-due">Prazo de entrega: <b>${fmtIso(d.due_date)}</b></p>` : ''}
         </section>
         <section class="ap-decide rise" style="--i:3" id="decide">
           <p class="ap-q">O que você achou?</p>

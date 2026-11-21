@@ -111,6 +111,8 @@ function supabaseApi() {
       return d[0] || null;
     },
     async newApprovalLink(taskId) { return ok(await sb.rpc('new_approval_link', { p_task: taskId })); },
+    async confirmSchedule(id, postAt, caption, format) { ok(await sb.rpc('confirm_schedule', { p_id: id, p_post_at: postAt, p_caption: caption, p_format: format || '' })); },
+    async unconfirmSchedule(id) { ok(await sb.rpc('unconfirm_schedule', { p_id: id })); },
     async deleteAttachment(id) { ok(await sb.from('task_attachments').delete().eq('id', id)); },
     async pulse(answer) { ok(await sb.from('pulses').insert({ answer })); },
     async pulses(sinceIso) { return ok(await sb.from('pulses').select('*').gte('created_at', sinceIso).order('created_at')); },
@@ -144,8 +146,8 @@ function demoApi() {
     { id: 'u6', name: 'Duda Alves', role: 'trafego', avatar: 'panda', stars: 11, email: 'trafego@elevate.com', active: true }
   ];
   const clients = [
-    { id: 'c1', name: 'Clínica Sorriso', active: true }, { id: 'c2', name: 'Studio Nova', active: true },
-    { id: 'c3', name: 'Café Grão', active: true }, { id: 'c4', name: 'Academia Força', active: true }
+    { id: 'c1', name: 'Clínica Sorriso', active: true, instagram: 'clinicasorriso' }, { id: 'c2', name: 'Studio Nova', active: true, instagram: 'studionova' },
+    { id: 'c3', name: 'Café Grão', active: true, instagram: 'cafegrao' }, { id: 'c4', name: 'Academia Força', active: true }
   ];
   const mk = (title, who, status, prio, extra = {}) => {
     const id = uid();
@@ -164,10 +166,10 @@ function demoApi() {
     mk('Reunião de alinhamento com o time', 'u1', 'pendente', 'baixa', { due_date: addDays(t, 2) }),
     mk('Reels do lançamento', 'u4', 'finalizada', 'alta', { client_id: 'c2' }),
     mk('Corte do podcast ep. 12', 'u4', 'pendente', 'media', { client_id: 'c3' }),
-    mk('Peças do feed — novembro', 'u3', 'finalizada', 'media', { client_id: 'c1', stage: 'revisao_cliente' }),
+    mk('Peças do feed — novembro', 'u3', 'finalizada', 'media', { client_id: 'c1', stage: 'revisao_cliente', post_format: 'feed', post_at: new Date(Date.now() + 3 * 86400e3).toISOString(), caption: 'Seu sorriso merece cuidado de verdade 💙' }),
     mk('Logo da campanha de verão', 'u3', 'em_alteracao', 'alta', { client_id: 'c4', stage: 'em_alteracao', review_note: 'Cliente pediu o vermelho mais escuro.' }),
     mk('Stories da promoção', 'u3', 'nao_realizada', 'media', { justification: 'Briefing não chegou.', client_id: 'c3' }),
-    mk('Agendar posts da semana', 'u5', 'finalizada', 'media', { client_id: 'c3', stage: 'agendamento' }),
+    mk('Agendar posts da semana', 'u5', 'finalizada', 'media', { client_id: 'c3', stage: 'agendamento', post_format: 'carrossel', post_at: new Date(Date.now() + 2 * 86400e3).toISOString(), caption: 'Café quentinho e grão selecionado ☕️ Passa aqui!\n#cafegrao #cafeespecial' }),
     mk('Relatório de campanhas', 'u6', 'incompleta', 'alta', { justification: 'Falta o dado do Google Ads.', client_id: 'c4' }),
     mk('Subir novos criativos', 'u6', 'finalizada', 'urgente', { client_id: 'c2', stage: 'concluido' }),
     ...[-1, -2, -3, -4].flatMap((d) => [
@@ -287,6 +289,14 @@ function demoApi() {
       return x && x.stage === 'revisao_cliente' ? { token: 'demo', root_id: rootId, created_at: x.stage_at, expires_at: new Date(Date.now() + 6 * 86400e3).toISOString(), used_at: null } : null;
     },
     async newApprovalLink() { return 'demo'; },
+    async confirmSchedule(id, postAt, caption, format) {
+      const x = tasks.find((k) => k.id === id);
+      tasks.filter((k) => k.root_id === x.root_id).forEach((k) => Object.assign(k, { post_at: postAt, caption, post_format: format || null, scheduled_at: new Date().toISOString(), scheduled_by: me.id }));
+    },
+    async unconfirmSchedule(id) {
+      const x = tasks.find((k) => k.id === id);
+      tasks.filter((k) => k.root_id === x.root_id).forEach((k) => Object.assign(k, { scheduled_at: null, scheduled_by: null }));
+    },
     async deleteAttachment(id) { attachments.splice(attachments.findIndex((a) => a.id === id), 1); },
     async pulse(answer) { pulses.push({ id: uid(), user_id: me.id, answer, created_at: new Date().toISOString() }); },
     async pulses(since) { return wait(pulses.filter((p) => p.created_at >= since && (isMgr() || p.user_id === me.id))); },

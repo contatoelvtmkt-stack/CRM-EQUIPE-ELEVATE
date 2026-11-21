@@ -32,6 +32,7 @@ create table if not exists public.clients (
   created_at timestamptz not null default now()
 );
 alter table public.clients add column if not exists logo_url text;
+alter table public.clients add column if not exists instagram text;
 
 -- ---------- Tarefas ---------------------------------------------------
 create table if not exists public.tasks (
@@ -55,6 +56,15 @@ alter table public.tasks add column if not exists stage       text not null defa
 alter table public.tasks add column if not exists root_id     uuid;
 alter table public.tasks add column if not exists review_note text not null default '';
 alter table public.tasks add column if not exists stage_at    timestamptz not null default now();
+-- publicação
+alter table public.tasks add column if not exists post_at      timestamptz;
+alter table public.tasks add column if not exists caption      text not null default '';
+alter table public.tasks add column if not exists post_format  text;
+alter table public.tasks add column if not exists scheduled_at timestamptz;
+alter table public.tasks add column if not exists scheduled_by uuid references public.profiles(id) on delete set null;
+alter table public.tasks drop constraint if exists tasks_post_format_check;
+alter table public.tasks add constraint tasks_post_format_check
+  check (post_format is null or post_format in ('feed','carrossel','reels','story'));
 
 -- status do dia: "parcial" virou "incompleta"; nova "em_alteracao"
 alter table public.tasks drop constraint if exists tasks_status_check;
@@ -198,6 +208,8 @@ begin
     new.due_date := old.due_date; new.assigned_to := old.assigned_to;
     new.created_by := old.created_by; new.client_id := old.client_id;
     new.stage := old.stage; new.review_note := old.review_note; new.root_id := old.root_id;
+    new.post_at := old.post_at; new.caption := old.caption; new.post_format := old.post_format;
+    new.scheduled_at := old.scheduled_at; new.scheduled_by := old.scheduled_by;
   end if;
 
   -- marcou como finalizada: a peça vai para a revisão interna
@@ -256,6 +268,31 @@ begin
    where id = t.id;
 end $$;
 
+-- Confirmação do agendamento (social media, gestora ou admin), na etapa Agendamento
+create or replace function public.confirm_schedule(p_id uuid, p_post_at timestamptz, p_caption text, p_format text)
+returns void language plpgsql security definer set search_path = public as $$
+declare t public.tasks;
+begin
+  if not public.is_reviewer() then raise exception 'Sem permissão'; end if;
+  select * into t from public.tasks where id = p_id;
+  if t.stage <> 'agendamento' then raise exception 'A tarefa precisa estar em Agendamento'; end if;
+  if p_post_at is null then raise exception 'Informe a data e a hora da postagem'; end if;
+  perform set_config('app.bypass', 'on', true);
+  update public.tasks set post_at = p_post_at, caption = coalesce(p_caption, ''), post_format = nullif(p_format, ''),
+         scheduled_at = now(), scheduled_by = auth.uid()
+   where root_id = t.root_id;
+end $$;
+
+create or replace function public.unconfirm_schedule(p_id uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare t public.tasks;
+begin
+  if not public.is_reviewer() then raise exception 'Sem permissão'; end if;
+  select * into t from public.tasks where id = p_id;
+  perform set_config('app.bypass', 'on', true);
+  update public.tasks set scheduled_at = null, scheduled_by = null where root_id = t.root_id;
+end $$;
+
 -- Fluxo: a versão mais recente de cada peça
 create or replace view public.pipeline with (security_invoker = true) as
   select distinct on (root_id) * from public.tasks order by root_id, created_at desc;
@@ -290,9 +327,11 @@ begin
 
   -- 3) incompleta / não realizada / em alteração passam para hoje com o mesmo status
   insert into public.tasks (title, description, priority, task_date, due_date, assigned_to, created_by,
-                            status, justification, carried_from, client_id, stage, root_id, review_note, stage_at)
+                            status, justification, carried_from, client_id, stage, root_id, review_note, stage_at,
+                            post_at, caption, post_format)
   select o.title, o.description, o.priority, t, o.due_date, o.assigned_to, o.created_by,
-         o.status, o.justification, o.id, o.client_id, o.stage, o.root_id, o.review_note, o.stage_at
+         o.status, o.justification, o.id, o.client_id, o.stage, o.root_id, o.review_note, o.stage_at,
+         o.post_at, o.caption, o.post_format
     from public.tasks o
    where o.task_date < t
      and o.status in ('incompleta','nao_realizada','em_alteracao')
@@ -339,9 +378,11 @@ begin
            stage_at = now(), completed_at = null where id = t.id;
   else
     insert into public.tasks (title, description, priority, task_date, due_date, assigned_to, created_by,
-                              status, justification, client_id, stage, root_id, review_note, stage_at)
+                              status, justification, client_id, stage, root_id, review_note, stage_at,
+                              post_at, caption, post_format)
     values (t.title, t.description, t.priority, d, greatest(t.due_date, d), t.assigned_to, coalesce(p_by, t.created_by),
-            'em_alteracao', '', t.client_id, 'em_alteracao', t.root_id, coalesce(p_note,''), now());
+            'em_alteracao', '', t.client_id, 'em_alteracao', t.root_id, coalesce(p_note,''), now(),
+            t.post_at, t.caption, t.post_format);
     update public.tasks set stage = 'em_alteracao', stage_at = now() where id = t.id;
   end if;
 end $$;
@@ -405,6 +446,7 @@ begin
   return json_build_object(
     'state', st, 'decision', l.decision, 'expires_at', l.expires_at,
     'title', t.title, 'description', t.description, 'due_date', t.due_date,
+    'post_at', t.post_at, 'caption', t.caption, 'post_format', t.post_format, 'instagram', c.instagram,
     'client', json_build_object('name', coalesce(c.name, ''), 'logo_url', c.logo_url),
     'files', coalesce((select json_agg(json_build_object('kind', a.kind, 'name', a.name, 'url', a.url, 'path', a.path) order by a.created_at)
                          from public.task_attachments a where a.root_id = l.root_id and a.name not like 'Cliente – %'), '[]'::json));
@@ -519,6 +561,8 @@ grant select on public.star_days, public.pipeline to authenticated;
 grant execute on function public.daily_rollover() to authenticated;
 grant execute on function public.set_member(uuid, text, text) to authenticated;
 grant execute on function public.review_task(uuid, text, text, text) to authenticated;
+grant execute on function public.confirm_schedule(uuid, timestamptz, text, text) to authenticated;
+grant execute on function public.unconfirm_schedule(uuid) to authenticated;
 grant select on public.approval_links to authenticated;
 grant execute on function public.new_approval_link(uuid) to authenticated;
 grant usage on schema public to anon;

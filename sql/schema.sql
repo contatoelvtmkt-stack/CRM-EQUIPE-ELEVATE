@@ -610,6 +610,12 @@ grant execute on function public.submit_approval(text, text, text, json) to anon
 revoke execute on function public._request_change(uuid, text, uuid) from public, anon, authenticated;
 revoke execute on function public._new_approval_link(uuid, uuid) from public, anon, authenticated;
 
+-- funções internas (Edge Functions) usam o service_role: precisa ler e gravar tudo
+grant usage on schema public to service_role;
+grant all on all tables in schema public to service_role;
+grant all on all sequences in schema public to service_role;
+grant execute on all functions in schema public to service_role;
+
 -- ---------- Arquivos: fotos de perfil e anexos (Supabase Storage) --------
 do $$
 begin

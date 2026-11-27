@@ -68,6 +68,11 @@ export const I = {
   crown: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 7l5 4 4-7 4 7 5-4-2 12H5z"/></svg>',
   clock: p('<rect x="3" y="3" width="18" height="18"/><path d="M12 7v5l3 2"/>'),
   insta: p('<rect x="3" y="3" width="18" height="18"/><rect x="8" y="8" width="8" height="8"/><path d="M17 6.5h.5"/>'),
+  pencil: p('<path d="M4 20h4L20 8l-4-4L4 16z"/><path d="M14 6l4 4"/>'),
+  cash: p('<rect x="2" y="6" width="20" height="12"/><rect x="9" y="9" width="6" height="6"/><path d="M5 9v6M19 9v6"/>'),
+  wallet: p('<path d="M3 6h16v14H3z"/><path d="M3 6l12-3v3"/><rect x="14" y="11" width="7" height="4"/>'),
+  refresh: p('<path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/>'),
+  alert: p('<path d="M12 3 2 21h20z"/><path d="M12 10v5M12 18v.5"/>'),
   report: p('<path d="M5 3h10l4 4v14H5z"/><path d="M9 17v-3M12 17v-6M15 17v-4"/>'),
   calendar: p('<rect x="3" y="5" width="18" height="16"/><path d="M3 10h18M8 3v4M16 3v4"/>')
 };

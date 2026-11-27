@@ -67,7 +67,7 @@ function supabaseApi() {
     async me() { return ok(await sb.from('profiles').select('*').eq('id', await getUid()).single()); },
     async rollover() { await sb.rpc('daily_rollover'); },
     async profiles() { return ok(await sb.from('profiles').select('*').neq('role', 'pendente').eq('active', true).order('name')); },
-    async allProfiles() { return ok(await sb.from('profiles').select('*').order('name')); },
+    async allProfiles() { return ok(await sb.from('profiles').select('*').is('removed_at', null).order('name')); },
     async tasks({ date, from, to, userId }) {
       let q = sb.from('tasks').select('*').order('created_at');
       if (date) q = q.eq('task_date', date);
@@ -101,7 +101,7 @@ function supabaseApi() {
       ok(await sb.rpc('set_member', { p_id: data.user.id, p_name: name, p_role: role }));
     },
     async setMember(id, name, role) { ok(await sb.rpc('set_member', { p_id: id, p_name: name, p_role: role })); },
-    async clients() { return ok(await sb.from('clients').select('*').order('name')); },
+    async clients() { return ok(await sb.from('clients').select('*').is('removed_at', null).order('name')); },
     async createClient(name) { return ok(await sb.from('clients').insert({ name }).select().single()); },
     async updateClient(id, patch) { return ok(await sb.from('clients').update(patch).eq('id', id).select().single()); },
     async attachments(rootId) { return ok(await sb.from('task_attachments').select('*').eq('root_id', rootId).order('created_at')); },
@@ -125,6 +125,40 @@ function supabaseApi() {
       return d[0] || null;
     },
     async newApprovalLink(taskId) { return ok(await sb.rpc('new_approval_link', { p_task: taskId })); },
+    // ---- clientes / equipe ----
+    async removeClient(id) { ok(await sb.from('clients').update({ removed_at: new Date().toISOString(), active: false }).eq('id', id)); },
+    async removeMember(id) { ok(await sb.rpc('remove_member', { p_id: id })); },
+    async plans() { return ok(await sb.from('client_plans').select('*')); },
+    async savePlan(clientId, plan) { return ok(await sb.from('client_plans').upsert({ client_id: clientId, ...plan, updated_at: new Date().toISOString() }).select().single()); },
+    // ---- saldos de anúncios ----
+    async adBalances() { return ok(await sb.from('ad_balances').select('*')); },
+    async adHistory(clientId) { return ok(await sb.from('ad_balance_history').select('*').eq('client_id', clientId).order('checked_at', { ascending: false }).limit(72)); },
+    async refreshBalances() {
+      const { data, error } = await sb.functions.invoke('ads-balance', { body: { origem: 'crm' } });
+      if (error) {
+        let msg = error.message;
+        try { msg = (await error.context.json()).error || msg; } catch { /* */ }
+        if (/Failed to send|not found|404/i.test(msg)) msg = 'A função "ads-balance" ainda não foi publicada no Supabase.';
+        throw new Error(msg);
+      }
+      return data;
+    },
+    async setThreshold(clientId, value) { ok(await sb.rpc('set_ad_threshold', { p_client: clientId, p_value: value })); },
+    // ---- financeiro (admin) ----
+    async financeSync() { return ok(await sb.rpc('finance_sync')); },
+    async entries(from, to) {
+      return ok(await sb.from('finance_entries').select('*')
+        .or(`and(due_date.gte.${from},due_date.lte.${to}),and(paid_at.gte.${from},paid_at.lte.${to})`)
+        .order('due_date', { ascending: false }).limit(2000));
+    },
+    async addEntry(e) { return ok(await sb.from('finance_entries').insert(e).select().single()); },
+    async updateEntry(id, patch) { return ok(await sb.from('finance_entries').update(patch).eq('id', id).select().single()); },
+    async deleteEntry(id) { ok(await sb.from('finance_entries').delete().eq('id', id)); },
+    // ---- metas ----
+    async goals() { return ok(await sb.from('goals').select('*').order('end_date', { ascending: false })); },
+    async saveGoal(g) { return ok(await sb.from('goals').upsert(g).select().single()); },
+    async deleteGoal(id) { ok(await sb.from('goals').delete().eq('id', id)); },
+    async goalsProgress() { return ok(await sb.rpc('goals_progress')) || []; },
     async confirmSchedule(id, postAt, caption, format) { ok(await sb.rpc('confirm_schedule', { p_id: id, p_post_at: postAt, p_caption: caption, p_format: format || '' })); },
     async unconfirmSchedule(id) { ok(await sb.rpc('unconfirm_schedule', { p_id: id })); },
     async reports(clientId) {
@@ -196,8 +230,8 @@ function demoApi() {
     { id: 'u6', name: 'Duda Alves', role: 'trafego', avatar: 'panda', stars: 11, email: 'trafego@elevate.com', active: true }
   ];
   const clients = [
-    { id: 'c1', name: 'Clínica Sorriso', active: true, instagram: 'clinicasorriso' }, { id: 'c2', name: 'Studio Nova', active: true, instagram: 'studionova' },
-    { id: 'c3', name: 'Café Grão', active: true, instagram: 'cafegrao', ig_user_id: '17841400000000003', ig_username: 'cafegrao', fb_page_id: '1003', fb_page_name: 'Café Grão', ad_account_id: 'act_333', ad_account_name: 'Café Grão - Anúncios' }, { id: 'c4', name: 'Academia Força', active: true }
+    { id: 'c1', name: 'Clínica Sorriso', active: true, instagram: 'clinicasorriso', ad_account_id: 'act_111', ad_account_name: 'Clínica Sorriso', ad_alert_threshold: 30 }, { id: 'c2', name: 'Studio Nova', active: true, instagram: 'studionova', ad_account_id: 'act_222', ad_account_name: 'Studio Nova', ad_alert_threshold: 30 },
+    { id: 'c3', name: 'Café Grão', active: true, instagram: 'cafegrao', ig_user_id: '17841400000000003', ig_username: 'cafegrao', fb_page_id: '1003', fb_page_name: 'Café Grão', ad_account_id: 'act_333', ad_account_name: 'Café Grão - Anúncios', ad_alert_threshold: 30 }, { id: 'c4', name: 'Academia Força', active: true }
   ];
   const mk = (title, who, status, prio, extra = {}) => {
     const id = uid();
@@ -275,6 +309,33 @@ function demoApi() {
       ], errors: [] } : { unavailable: 'A conta de anúncios deste cliente ainda não foi vinculada (Equipe → Clientes → botão do Instagram → Conta de anúncios).' };
     return { client: { id: c.id, name: c.name, logo_url: c.logo_url }, since, until, prev: { since: addDays(since, -len), until: addDays(since, -1) }, ig, fb, ads, generated_at: new Date().toISOString() };
   }
+  const plans = [
+    { client_id: 'c1', plan_type: 'recorrente', plan_name: 'Plano Social', plan_value: 1800, billing_day: 5, start_date: '2026-01-10' },
+    { client_id: 'c2', plan_type: 'recorrente', plan_name: 'Plano Completo', plan_value: 3200, billing_day: 10, start_date: '2026-03-01' },
+    { client_id: 'c3', plan_type: 'recorrente', plan_name: 'Plano Social + Tráfego', plan_value: 2400, billing_day: 15, start_date: '2026-05-01' },
+    { client_id: 'c4', plan_type: 'avulso', plan_name: '', plan_value: 0, billing_day: 10, start_date: '2026-08-01' }
+  ];
+  const entries = [
+    { id: 'e1', kind: 'receita', source: 'avulso', client_id: 'c4', description: 'Ensaio fotográfico · Academia Força', category: 'Serviço avulso', amount: 950, due_date: addDays(t, -12), paid_at: addDays(t, -10), status: 'pago', notes: '' },
+    { id: 'e2', kind: 'custo', source: 'manual', client_id: null, description: 'Adobe Creative Cloud', category: 'Software', amount: 289.9, due_date: addDays(t, -8), paid_at: addDays(t, -8), status: 'pago', notes: '' },
+    { id: 'e3', kind: 'custo', source: 'manual', client_id: null, description: 'Freelancer de vídeo', category: 'Terceiros', amount: 600, due_date: addDays(t, 6), paid_at: null, status: 'pendente', notes: '' }
+  ];
+  const ym = t.slice(0, 7);
+  const goals = [
+    { id: 'g1', title: 'Faturamento do mês', metric: 'faturamento', period: 'mes', start_date: ym + '-01', end_date: addDays(addDays(ym + '-01', 32).slice(0, 7) + '-01', -1), target: 12000 },
+    { id: 'g2', title: 'Clientes recorrentes no ano', metric: 'clientes', period: 'ano', start_date: t.slice(0, 4) + '-01-01', end_date: t.slice(0, 4) + '-12-31', target: 10 }
+  ];
+  const balances = [
+    { client_id: 'c3', account_id: 'act_333', account_name: 'Café Grão - Anúncios', currency: 'BRL', kind: 'prepago', available: 22.4, spend_cap: null, amount_spent: 1830.5, account_status: 1, low: true, error: '', checked_at: new Date(Date.now() - 1200e3).toISOString() },
+    { client_id: 'c1', account_id: 'act_111', account_name: 'Clínica Sorriso', currency: 'BRL', kind: 'cartao', available: null, spend_cap: null, amount_spent: 5320, account_status: 1, low: false, error: '', checked_at: new Date(Date.now() - 1200e3).toISOString() },
+    { client_id: 'c2', account_id: 'act_222', account_name: 'Studio Nova', currency: 'BRL', kind: 'prepago', available: 184.9, spend_cap: null, amount_spent: 2210, account_status: 1, low: false, error: '', checked_at: new Date(Date.now() - 1200e3).toISOString() }
+  ];
+  // agendamento automático ao entrar em "Agendamento" com data de postagem
+  function autoSchedule(x) {
+    if (x.stage !== 'agendamento' || x.scheduled_at || !x.post_at) return;
+    const cli = clients.find((c) => c.id === x.client_id);
+    Object.assign(x, { scheduled_at: new Date().toISOString(), scheduled_by: x.created_by, publish_status: cli?.ig_user_id ? 'fila' : null, publish_error: '' });
+  }
   const demoReports = [];
   [1, 2].forEach((k) => {
     const first = new Date(); first.setUTCDate(1); first.setUTCMonth(first.getUTCMonth() - k);
@@ -310,8 +371,8 @@ function demoApi() {
     async signOut() { logged = false; store('demo-user'); authCb(null); },
     async me() { return wait(me); },
     async rollover() {},
-    async profiles() { return wait(people.filter((p) => p.role !== 'pendente' && p.active)); },
-    async allProfiles() { return wait(people); },
+    async profiles() { return wait(people.filter((p) => p.role !== 'pendente' && p.active && !p.removed_at)); },
+    async allProfiles() { return wait(people.filter((p) => !p.removed_at)); },
     async tasks({ date, from, to, userId }) {
       return wait(tasks.filter((x) =>
         (!date || x.task_date === date) && (!from || x.task_date >= from) && (!to || x.task_date <= to) &&
@@ -339,7 +400,7 @@ function demoApi() {
     async deleteTask(id) { tasks.splice(tasks.findIndex((k) => k.id === id), 1); },
     async review(id, action, note = '', stage = null) {
       const x = tasks.find((k) => k.id === id);
-      if (action === 'mover') { Object.assign(x, { stage, stage_at: new Date().toISOString() }); return; }
+      if (action === 'mover') { Object.assign(x, { stage, stage_at: new Date().toISOString() }); autoSchedule(x); return; }
       const nowIso = new Date().toISOString();
       if (action === 'alterar') {
         if (x.task_date === t && x.status !== 'finalizada') Object.assign(x, { status: 'em_alteracao', stage: 'em_alteracao', review_note: note, stage_at: nowIso });
@@ -351,6 +412,7 @@ function demoApi() {
       }
       const nxt = { revisao_interna: 'revisao_cliente', revisao_cliente: 'agendamento', agendamento: 'concluido' }[x.stage];
       Object.assign(x, { stage: nxt, stage_at: nowIso });
+      autoSchedule(x);
     },
     async updateProfile(id, patch) { const p = people.find((k) => k.id === id); Object.assign(p, patch); return wait(p); },
     async uploadPhoto(file) {
@@ -361,7 +423,7 @@ function demoApi() {
     async removePhoto() { me.photo_url = null; return wait(me); },
     async createMember({ name, email, role }) { people.push({ id: uid(), name, email, role, avatar: 'capivara', stars: 0, active: true }); },
     async setMember(id, name, role) { Object.assign(people.find((k) => k.id === id), { name, role }); },
-    async clients() { return wait(clients); },
+    async clients() { return wait(clients.filter((c) => !c.removed_at)); },
     async createClient(name) { const c = { id: uid(), name, active: true }; clients.push(c); return wait(c); },
     async updateClient(id, patch) { const c = clients.find((k) => k.id === id); Object.assign(c, patch); return wait(c); },
     async attachments(rootId) { return wait(attachments.filter((a) => a.root_id === rootId)); },
@@ -379,6 +441,41 @@ function demoApi() {
       return x && x.stage === 'revisao_cliente' ? { token: 'demo', root_id: rootId, created_at: x.stage_at, expires_at: new Date(Date.now() + 6 * 86400e3).toISOString(), used_at: null } : null;
     },
     async newApprovalLink() { return 'demo'; },
+    async removeClient(id) { Object.assign(clients.find((c) => c.id === id), { removed_at: new Date().toISOString(), active: false }); },
+    async removeMember(id) { Object.assign(people.find((x) => x.id === id), { removed_at: new Date().toISOString(), active: false }); },
+    async plans() { return wait(plans); },
+    async savePlan(clientId, plan) { const i = plans.findIndex((x) => x.client_id === clientId); const row = { client_id: clientId, ...plan }; if (i >= 0) plans[i] = { ...plans[i], ...row }; else plans.push(row); return wait(row); },
+    async adBalances() { return wait(balances); },
+    async adHistory(clientId) { return wait([...Array(24)].map((_, i) => ({ client_id: clientId, available: Math.max(0, (balances.find((b) => b.client_id === clientId)?.available ?? 0) + i * 4.2), checked_at: new Date(Date.now() - i * 3600e3).toISOString() }))); },
+    async refreshBalances() { await new Promise((r) => setTimeout(r, 600)); balances.forEach((b) => (b.checked_at = new Date().toISOString())); return { atualizados: balances.length, baixos: balances.filter((b) => b.low).length }; },
+    async setThreshold(clientId, value) { const c = clients.find((x) => x.id === clientId); c.ad_alert_threshold = value; const b = balances.find((x) => x.client_id === clientId); if (b) b.low = b.available !== null && b.available <= value; },
+    async financeSync() {
+      const cur = todayBR().slice(0, 7) + '-01';
+      plans.filter((p) => p.plan_type === 'recorrente' && p.plan_value > 0).forEach((p) => {
+        for (let k = 2; k >= 0; k--) {
+          const d = new Date(cur + 'T12:00:00Z'); d.setUTCMonth(d.getUTCMonth() - k); const comp = d.toISOString().slice(0, 10);
+          if (comp < p.start_date.slice(0, 7) + '-01') continue;
+          if (!entries.some((e) => e.source === 'plano' && e.client_id === p.client_id && e.competence === comp)) {
+            const c = clients.find((x) => x.id === p.client_id);
+            entries.push({ id: uid(), kind: 'receita', source: 'plano', client_id: p.client_id, competence: comp, description: `${p.plan_name || 'Plano mensal'} · ${c.name}`, category: 'Plano recorrente', amount: p.plan_value, due_date: comp.slice(0, 8) + String(p.billing_day).padStart(2, '0'), paid_at: k > 0 ? comp.slice(0, 8) + String(p.billing_day).padStart(2, '0') : null, status: k > 0 ? 'pago' : 'pendente', notes: '' });
+          }
+        }
+      });
+      return 0;
+    },
+    async entries(from, to) { return wait(entries.filter((e) => (e.due_date >= from && e.due_date <= to) || (e.paid_at && e.paid_at >= from && e.paid_at <= to))); },
+    async addEntry(e) { const row = { id: uid(), status: 'pendente', notes: '', source: 'manual', ...e }; entries.push(row); return wait(row); },
+    async updateEntry(id, patch) { const e = entries.find((x) => x.id === id); Object.assign(e, patch); return wait(e); },
+    async deleteEntry(id) { entries.splice(entries.findIndex((x) => x.id === id), 1); },
+    async goals() { return wait(goals); },
+    async saveGoal(g) { if (g.id) { Object.assign(goals.find((x) => x.id === g.id), g); return wait(g); } const row = { ...g, id: uid() }; goals.push(row); return wait(row); },
+    async deleteGoal(id) { goals.splice(goals.findIndex((x) => x.id === id), 1); },
+    async goalsProgress() {
+      const t = todayBR();
+      return wait(goals.filter((g) => g.end_date >= addDays(t, -31)).map((g) => ({ ...g, current: g.metric === 'faturamento'
+        ? entries.filter((e) => e.kind === 'receita' && e.status === 'pago' && e.paid_at >= g.start_date && e.paid_at <= g.end_date).reduce((a, e) => a + Number(e.amount), 0)
+        : plans.filter((p) => p.plan_type === 'recorrente' && !clients.find((c) => c.id === p.client_id)?.removed_at).length })));
+    },
     async confirmSchedule(id, postAt, caption, format) {
       const x = tasks.find((k) => k.id === id);
       const cli = clients.find((c) => c.id === x.client_id);

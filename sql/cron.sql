@@ -39,3 +39,21 @@ select cron.schedule(
        timeout_milliseconds := 120000
      ) $$
 );
+
+-- Saldos das contas de anúncios: atualiza de hora em hora
+do $$
+begin
+  perform cron.unschedule('saldos-anuncios');
+exception when others then null;
+end $$;
+
+select cron.schedule(
+  'saldos-anuncios',
+  '17 * * * *',
+  $$ select net.http_post(
+       url := 'https://yzpxyiisadexrwplcljp.supabase.co/functions/v1/ads-balance',
+       headers := '{"Content-Type": "application/json"}'::jsonb,
+       body := '{"origem": "cron"}'::jsonb,
+       timeout_milliseconds := 60000
+     ) $$
+);

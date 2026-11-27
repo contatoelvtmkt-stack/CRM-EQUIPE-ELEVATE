@@ -4,6 +4,7 @@ import { ONBOARDING_EVERY_MIN, JEREMIAS_EVERY_MIN } from './config.js';
 import { I, state, isManager, isReviewer, $, esc, face, toast, busy, hideTip, ROLES } from './ui.js';
 import { taskCard, newTaskSheet } from './tasks.js';
 import { viewHoje, viewPainel, viewFluxo, viewRanking, viewChat, viewEnergia, viewEquipe, viewPerfil, viewMais, viewRelatorios } from './views.js';
+import { viewSaldos, viewFinanceiro, loadLowBalances, lowBalancePopup, isAdsTeam } from './admin.js';
 
 const store = {
   get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
@@ -15,6 +16,7 @@ const store = {
 // ---------------------------------------------------------------------
 async function start() {
   state.render = render;
+  render.badges = () => loadLowBalances().then(updateBadges);
   api.onAuth((s) => { if (!s) { state.me = null; renderLogin(); } });
   const s = await api.session();
   if (s) await enter(); else renderLogin();
@@ -38,6 +40,8 @@ async function enter() {
   state.tab = 'hoje';
   render();
   setTimeout(maybeJeremias, 4000);
+  // saldo baixo nas contas de anúncios (admin e gestor de tráfego)
+  if (isAdsTeam()) loadLowBalances().then(() => { updateBadges(); lowBalancePopup((tab) => { state.tab = tab; render(); }); });
 }
 
 // ---------------------------------------------------------------------
@@ -86,9 +90,20 @@ function menuItems() {
   const items = [['hoje', 'Hoje', I.home], ['painel', 'Painel', I.chart]];
   if (isReviewer()) items.push(['fluxo', 'Fluxo de conteúdo', I.flow], ['relatorios', 'Relatórios', I.report]);
   items.push(['ranking', 'Ranking', I.trophy], ['chat', 'Chat da equipe', I.chat]);
+  if (isAdsTeam()) items.push(['saldos', 'Saldos de anúncios', I.wallet]);
+  if (state.me.role === 'admin') items.push(['financeiro', 'Financeiro', I.cash]);
   if (isManager()) items.push(['energia', 'Energia do time', I.bolt], ['equipe', 'Equipe e clientes', I.team]);
   items.push(['perfil', 'Perfil', I.user]);
   return items;
+}
+
+// contador de contas com saldo baixo no menu
+function updateBadges() {
+  const n = (state.lowBalances || []).length;
+  document.querySelectorAll('.side [data-tab="saldos"], .nav [data-tab="mais"], .menu-list [data-go="saldos"]').forEach((b) => {
+    b.querySelector('.badge')?.remove();
+    if (n) { const s = document.createElement('span'); s.className = 'badge'; s.textContent = n; b.appendChild(s); }
+  });
 }
 
 async function render() {
@@ -122,11 +137,13 @@ async function render() {
   }));
   const views = {
     hoje: viewHoje, painel: viewPainel, fluxo: viewFluxo, ranking: viewRanking, chat: viewChat,
-    energia: viewEnergia, equipe: viewEquipe, perfil: viewPerfil, relatorios: viewRelatorios, mais: () => viewMais(moreItems)
+    energia: viewEnergia, equipe: viewEquipe, perfil: viewPerfil, relatorios: viewRelatorios, saldos: viewSaldos, financeiro: () => viewFinanceiro(), mais: () => viewMais(moreItems)
   };
   if (state.tab !== 'relatorios') state.relClient = null;
+  if ((state.tab === 'saldos' && !isAdsTeam()) || (state.tab === 'financeiro' && state.me.role !== 'admin')) state.tab = 'hoje';
   if ((['fluxo', 'relatorios'].includes(state.tab) && !isReviewer()) || (['energia', 'equipe'].includes(state.tab) && !isManager())) state.tab = 'hoje';
   try { await views[state.tab](); } catch (e) { toast(e.message); }
+  updateBadges();
 }
 
 // ---------------------------------------------------------------------

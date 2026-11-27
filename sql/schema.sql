@@ -17,6 +17,7 @@ create table if not exists public.profiles (
   created_at  timestamptz not null default now()
 );
 alter table public.profiles add column if not exists photo_url text;
+alter table public.profiles add column if not exists removed_at timestamptz;
 
 -- cargos: designer e editor viraram um só ("Designer / Editor")
 alter table public.profiles drop constraint if exists profiles_role_check;
@@ -32,6 +33,9 @@ create table if not exists public.clients (
   created_at timestamptz not null default now()
 );
 alter table public.clients add column if not exists logo_url text;
+alter table public.clients add column if not exists notes text not null default '';
+alter table public.clients add column if not exists removed_at timestamptz;
+alter table public.clients add column if not exists ad_alert_threshold numeric(12,2) not null default 30;
 alter table public.clients add column if not exists instagram text;
 -- conta do Instagram usada para publicar (vinculada pelo token do usuário do sistema)
 alter table public.clients add column if not exists ig_user_id  text;
@@ -166,12 +170,23 @@ language sql stable as $$ select coalesce(current_setting('app.bypass', true), '
 
 create or replace function public.my_role() returns text
 language sql stable security definer set search_path = public as $$
-  select role from public.profiles where id = auth.uid() and active
+  select role from public.profiles where id = auth.uid() and active and removed_at is null
 $$;
 
 create or replace function public.is_manager() returns boolean
 language sql stable security definer set search_path = public as $$
   select coalesce(public.my_role() in ('admin','gestora'), false)
+$$;
+
+create or replace function public.is_admin() returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce(public.my_role() = 'admin', false)
+$$;
+
+-- quem acompanha os saldos das contas de anúncios
+create or replace function public.is_ads_team() returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce(public.my_role() in ('admin','trafego'), false)
 $$;
 
 -- quem enxerga e move o fluxo de conteúdo
@@ -533,6 +548,153 @@ begin
   return json_build_object('ok', true);
 end $$;
 
+
+-- ---------- Agendamento automático ----------------------------------------
+-- Ao entrar em "Agendamento" com data/hora de postagem preenchida, já fica agendado
+-- (e na fila do Instagram, se o cliente tiver a conta vinculada). "Publicar agora" continua valendo.
+create or replace function public.auto_schedule() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if new.stage = 'agendamento' and old.stage is distinct from 'agendamento'
+     and new.scheduled_at is null and new.post_at is not null then
+    new.scheduled_at := now();
+    new.scheduled_by := coalesce(auth.uid(), new.created_by);
+    new.publish_status := case when exists (select 1 from public.clients c
+                                             where c.id = new.client_id and c.ig_user_id is not null and c.removed_at is null)
+                               then 'fila' else null end;
+    new.publish_error := '';
+    new.ig_container_id := null;
+  end if;
+  return new;
+end $$;
+drop trigger if exists auto_schedule on public.tasks;
+create trigger auto_schedule before update of stage on public.tasks
+  for each row execute function public.auto_schedule();
+
+-- ---------- Remover pessoa da equipe (mantém o histórico) -----------------
+create or replace function public.remove_member(p_id uuid) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_manager() then raise exception 'Sem permissão'; end if;
+  if p_id = auth.uid() then raise exception 'Você não pode remover a si mesmo'; end if;
+  perform set_config('app.bypass', 'on', true);
+  update public.profiles set active = false, removed_at = now() where id = p_id;
+end $$;
+
+-- ---------- Planos dos clientes (só administrador) ------------------------
+create table if not exists public.client_plans (
+  client_id   uuid primary key references public.clients(id) on delete cascade,
+  plan_type   text not null default 'recorrente' check (plan_type in ('recorrente','avulso')),
+  plan_name   text not null default '',
+  plan_value  numeric(12,2) not null default 0,
+  billing_day int not null default 10 check (billing_day between 1 and 31),
+  start_date  date not null default (now() at time zone 'America/Sao_Paulo')::date,
+  end_date    date,
+  updated_at  timestamptz not null default now()
+);
+
+-- ---------- Financeiro (só administrador) ---------------------------------
+create table if not exists public.finance_entries (
+  id          uuid primary key default gen_random_uuid(),
+  kind        text not null check (kind in ('receita','custo')),
+  source      text not null default 'manual' check (source in ('plano','avulso','manual')),
+  client_id   uuid references public.clients(id) on delete set null,
+  competence  date,
+  description text not null default '',
+  category    text not null default '',
+  amount      numeric(12,2) not null check (amount >= 0),
+  due_date    date not null default (now() at time zone 'America/Sao_Paulo')::date,
+  paid_at     date,
+  status      text not null default 'pendente' check (status in ('pendente','pago','cancelado')),
+  notes       text not null default '',
+  created_by  uuid references public.profiles(id) on delete set null default auth.uid(),
+  created_at  timestamptz not null default now()
+);
+create unique index if not exists finance_plano_unico on public.finance_entries (client_id, competence) where source = 'plano';
+create index if not exists finance_due on public.finance_entries (due_date);
+
+-- gera as cobranças mensais dos planos recorrentes (até o mês atual). Seguro rodar várias vezes.
+create or replace function public.finance_sync() returns int
+language plpgsql security definer set search_path = public as $$
+declare n int := 0; m date; cur date := date_trunc('month', public.today_br())::date; p record;
+begin
+  if not public.is_admin() then raise exception 'Sem permissão'; end if;
+  for p in select cp.*, c.name from public.client_plans cp join public.clients c on c.id = cp.client_id
+            where cp.plan_type = 'recorrente' and cp.plan_value > 0 and c.removed_at is null loop
+    m := greatest(date_trunc('month', p.start_date)::date, (cur - interval '11 months')::date);
+    while m <= cur and (p.end_date is null or m <= p.end_date) loop
+      insert into public.finance_entries (kind, source, client_id, competence, description, category, amount, due_date)
+      values ('receita', 'plano', p.client_id, m, coalesce(nullif(p.plan_name, ''), 'Plano mensal') || ' · ' || p.name, 'Plano recorrente',
+              p.plan_value, least(m + (p.billing_day - 1), (m + interval '1 month - 1 day')::date))
+      on conflict (client_id, competence) where source = 'plano' do nothing;
+      if found then n := n + 1; end if;
+      m := (m + interval '1 month')::date;
+    end loop;
+  end loop;
+  return n;
+end $$;
+
+-- ---------- Metas da empresa (todos veem o progresso) ---------------------
+create table if not exists public.goals (
+  id          uuid primary key default gen_random_uuid(),
+  title       text not null default '',
+  metric      text not null check (metric in ('faturamento','clientes')),
+  period      text not null check (period in ('mes','trimestre','semestre','ano')),
+  start_date  date not null,
+  end_date    date not null,
+  target      numeric(14,2) not null check (target > 0),
+  created_by  uuid references public.profiles(id) on delete set null default auth.uid(),
+  created_at  timestamptz not null default now()
+);
+
+create or replace function public.goals_progress() returns json
+language sql stable security definer set search_path = public as $$
+  select coalesce(json_agg(x order by x.end_date, x.metric), '[]'::json) from (
+    select g.id, g.title, g.metric, g.period, g.start_date, g.end_date, g.target,
+      case g.metric
+        when 'faturamento' then (select coalesce(sum(f.amount), 0) from public.finance_entries f
+                                  where f.kind = 'receita' and f.status = 'pago' and f.paid_at between g.start_date and g.end_date)
+        else (select count(*) from public.client_plans cp join public.clients c on c.id = cp.client_id
+               where cp.plan_type = 'recorrente' and c.removed_at is null and c.active
+                 and cp.start_date <= g.end_date and (cp.end_date is null or cp.end_date >= least(g.end_date, public.today_br())))
+      end as current
+    from public.goals g
+    where public.is_member() and g.end_date >= public.today_br() - 31
+  ) x
+$$;
+
+-- ---------- Saldos das contas de anúncios ---------------------------------
+create table if not exists public.ad_balances (
+  client_id     uuid primary key references public.clients(id) on delete cascade,
+  account_id    text not null,
+  account_name  text not null default '',
+  currency      text not null default 'BRL',
+  kind          text not null default 'desconhecido' check (kind in ('prepago','cartao','desconhecido')),
+  available     numeric(14,2),
+  spend_cap     numeric(14,2),
+  amount_spent  numeric(14,2),
+  account_status int,
+  low           boolean not null default false,
+  error         text not null default '',
+  checked_at    timestamptz not null default now()
+);
+create table if not exists public.ad_balance_history (
+  id          bigint generated always as identity primary key,
+  client_id   uuid not null references public.clients(id) on delete cascade,
+  available   numeric(14,2),
+  low         boolean not null default false,
+  checked_at  timestamptz not null default now()
+);
+create index if not exists ad_balance_history_client on public.ad_balance_history (client_id, checked_at desc);
+
+create or replace function public.set_ad_threshold(p_client uuid, p_value numeric) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_ads_team() then raise exception 'Sem permissão'; end if;
+  update public.clients set ad_alert_threshold = greatest(0, p_value) where id = p_client;
+  update public.ad_balances b set low = (b.available is not null and b.available <= greatest(0, p_value)) where b.client_id = p_client;
+end $$;
+
 -- ---------- Segurança (RLS) ---------------------------------------------
 alter table public.profiles         enable row level security;
 alter table public.tasks            enable row level security;
@@ -566,6 +728,22 @@ create policy "apagar tarefas" on public.tasks for delete to authenticated
 
 drop policy if exists "ver estrelas" on public.star_days;
 create policy "ver estrelas" on public.star_days for select to authenticated using (public.is_member());
+
+alter table public.client_plans       enable row level security;
+alter table public.finance_entries    enable row level security;
+alter table public.goals              enable row level security;
+alter table public.ad_balances        enable row level security;
+alter table public.ad_balance_history enable row level security;
+drop policy if exists "planos: admin" on public.client_plans;
+create policy "planos: admin" on public.client_plans for all to authenticated using (public.is_admin()) with check (public.is_admin());
+drop policy if exists "financeiro: admin" on public.finance_entries;
+create policy "financeiro: admin" on public.finance_entries for all to authenticated using (public.is_admin()) with check (public.is_admin());
+drop policy if exists "metas: admin" on public.goals;
+create policy "metas: admin" on public.goals for all to authenticated using (public.is_admin()) with check (public.is_admin());
+drop policy if exists "saldos: tráfego" on public.ad_balances;
+create policy "saldos: tráfego" on public.ad_balances for select to authenticated using (public.is_ads_team());
+drop policy if exists "saldos historico: tráfego" on public.ad_balance_history;
+create policy "saldos historico: tráfego" on public.ad_balance_history for select to authenticated using (public.is_ads_team());
 
 alter table public.reports enable row level security;
 drop policy if exists "ver relatorios" on public.reports;
@@ -625,6 +803,12 @@ grant execute on function public.review_task(uuid, text, text, text) to authenti
 grant execute on function public.confirm_schedule(uuid, timestamptz, text, text) to authenticated;
 grant execute on function public.unconfirm_schedule(uuid) to authenticated;
 grant execute on function public.publish_now(uuid) to authenticated;
+grant select, insert, update, delete on public.client_plans, public.finance_entries, public.goals to authenticated;
+grant select on public.ad_balances, public.ad_balance_history to authenticated;
+grant execute on function public.remove_member(uuid) to authenticated;
+grant execute on function public.finance_sync() to authenticated;
+grant execute on function public.goals_progress() to authenticated;
+grant execute on function public.set_ad_threshold(uuid, numeric) to authenticated;
 grant select on public.approval_links to authenticated;
 grant select, delete on public.reports to authenticated;
 grant execute on function public.new_approval_link(uuid) to authenticated;

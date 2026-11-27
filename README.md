@@ -68,6 +68,14 @@ Páginas do relatório: Instagram (visão geral, com seguidores x não seguidore
 
 Configuração: publicar a função `meta-report` (Edge Functions → Via Editor, com verificação de JWT desligada) e rodar `sql/cron.sql` de novo para ligar a geração mensal. Permissões do token: `read_insights` (Facebook) e `ads_read` (tráfego pago). A conta de anúncios de cada cliente é compartilhada com a Elevate como parceira, atribuída ao usuário do sistema CRM Elevate e vinculada no CRM (Equipe → Clientes → botão do Instagram → Conta de anúncios).
 
+## Saldos de anúncios, financeiro e metas
+
+- **Saldos de anúncios** (admin e gestor de tráfego): saldo de cada conta de anúncios, atualizado de hora em hora (função `ads-balance` + `sql/cron.sql`). Pré-pago: saldo disponível da Meta. Cartão: limite de gasto − gasto (sem limite, não há saldo). Alerta no menu e aviso ao abrir o CRM quando o saldo fica abaixo do valor definido por cliente (padrão R$ 30).
+- **Financeiro** (só administrador): planos dos clientes (recorrente/avulso, nome, valor, vencimento), faturamento recorrente mensal, cobranças mensais geradas sozinhas para marcar como pagas, receitas avulsas, custos, relatório por período com PDF.
+- **Metas**: o administrador define metas de faturamento ou de clientes por mês, trimestre, semestre ou ano. Todos veem o progresso no Painel (valores em reais só para o administrador).
+- **Agendamento automático**: ao entrar em Agendamento (pelo link do cliente, aprovando ou arrastando) com data e hora de postagem preenchidas, o post já fica agendado. "Publicar agora" continua disponível.
+- **Remover** cliente ou pessoa da equipe mantém o histórico (tarefas, relatórios, financeiro).
+
 ## Testar sem banco
 
 Abra o site com `?demo` no fim do endereço (ex.: `index.html?demo`) para navegar com dados de exemplo.

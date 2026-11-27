@@ -140,3 +140,6 @@
   #print-root .rep-page { width: 297mm; height: 210mm; box-shadow: none; page-break-after: always; break-after: page; transform: none !important; }
   #print-root .rep-page:last-child { page-break-after: auto; break-after: auto; }
 }
+
+.rtable.fin td { font-size: 12px; }
+.rtable.fin td:nth-child(2) { max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

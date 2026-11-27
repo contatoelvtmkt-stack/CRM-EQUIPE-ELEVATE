@@ -1,4 +1,5 @@
 import { renderReport, periodLabel } from './report.js';
+import { clientRow, clientSheet, goalsCard } from './admin.js';
 import { api, todayBR, addDays } from './api.js';
 import { AVATARS, avatarSVG, avatarName, runnerSVG, TURTLE_SVG } from './avatars.js';
 import {
@@ -119,8 +120,10 @@ export async function viewPainel() {
         </button>`).join('')}</div>`;
   }
 
+  const goalsHtml = await goalsCard();
   view().innerHTML = `${topBar(teamView ? 'Acompanhamento diário' : 'Seu desempenho', 'Painel')}
     <div class="page">
+      ${goalsHtml}
       ${weekStrip(d, week, 'pwk')}
       <div class="dash" style="margin-top:14px">
         <div class="col-a">
@@ -216,7 +219,11 @@ export async function viewFluxo() {
     const prev = { stage: t.stage, stage_at: t.stage_at };
     Object.assign(t, { stage: target, stage_at: new Date().toISOString() });
     draw();
-    try { await api.review(t.id, 'mover', '', target); toast(`Movido para ${STAGE[target]}.`); }
+    try {
+      await api.review(t.id, 'mover', '', target);
+      toast(target === 'agendamento' && t.post_at ? 'Movido e agendado automaticamente.' : `Movido para ${STAGE[target]}.`);
+      viewFluxo();
+    }
     catch (er) { Object.assign(t, prev); draw(); toast(er.message); }
   };
   const askChange = (t) => openSheet(`
@@ -441,7 +448,8 @@ export async function viewEnergia() {
 // EQUIPE + CLIENTES (admin e gestora)
 // =====================================================================
 export async function viewEquipe(tab = 'pessoas') {
-  const [all, clients] = await Promise.all([api.allProfiles(), api.clients()]);
+  const [all, clients, plans] = await Promise.all([api.allProfiles(), api.clients(), state.me.role === 'admin' ? api.plans().catch(() => []) : Promise.resolve([])]);
+  const plansBy = Object.fromEntries(plans.map((p) => [p.client_id, p]));
   state.people = all.filter((p) => p.role !== 'pendente' && p.active !== false);
   state.clients = clients;
   const pend = all.filter((p) => p.role === 'pendente');
@@ -471,17 +479,7 @@ export async function viewEquipe(tab = 'pessoas') {
           <input class="input" name="name" placeholder="Nome do novo cliente" required maxlength="80">
           <button class="btn btn-red" style="width:auto">${I.plus} Adicionar</button>
         </form>
-        <div class="list grid-2">${clients.map((c, i) => `<div class="person card rise" style="--i:${i};${c.active ? '' : 'opacity:.45'}">
-          <label class="client-logo" title="Enviar logo">${c.logo_url ? `<img src="${esc(c.logo_url)}" alt="">` : I.building}<span>${I.camera}</span>
-            <input type="file" accept="image/*" class="sr" data-logo="${c.id}"></label>
-          <span class="info"><b>${esc(c.name)}</b><small>${c.ig_user_id ? `<span class="ig-on">● publica em @${esc(c.ig_username || c.instagram || '')}</span>` : c.instagram ? `@${esc(c.instagram)} · não vinculado` : 'sem Instagram'}${c.active ? '' : ' · arquivado'}</small></span>
-          <button class="btn btn-ghost btn-sm" data-ig="${c.id}" aria-label="Instagram de ${esc(c.name)}">${I.insta}</button>
-          <button class="btn btn-ghost btn-sm" data-c="${c.id}">${c.active ? 'Arquivar' : 'Reativar'}</button></div>`).join('') || emptyBox('Nenhum cliente ainda.')}</div>`;
-      body.querySelectorAll('[data-logo]').forEach((inp) => (inp.onchange = async (e) => {
-        const file = e.target.files[0]; if (!file) return;
-        toast('Enviando logo…');
-        try { await api.uploadClientLogo(inp.dataset.logo, file); toast('Logo atualizada!'); viewEquipe('clientes'); } catch (er) { toast(er.message); }
-      }));
+        <div class="list grid-2">${clients.map((c, i) => clientRow(c, i, plansBy[c.id])).join('') || emptyBox('Nenhum cliente ainda.')}</div>`;
       $('#cl-form').onsubmit = async (e) => {
         e.preventDefault();
         const name = e.target.name.value.trim(); if (!name) return;
@@ -494,10 +492,8 @@ export async function viewEquipe(tab = 'pessoas') {
   $('#add').onclick = () => (tab === 'clientes' ? $('#cl-form input')?.focus() : memberSheet());
   body.onclick = async (e) => {
     const m = e.target.closest('[data-m]'); if (m) return memberSheet(all.find((p) => p.id === m.dataset.m));
-    const ig = e.target.closest('[data-ig]');
-    if (ig) return igSheet(clients.find((x) => x.id === ig.dataset.ig), clients);
-    const c = e.target.closest('[data-c]');
-    if (c) { const cl = clients.find((x) => x.id === c.dataset.c); await api.updateClient(cl.id, { active: !cl.active }); viewEquipe('clientes'); }
+    const ed = e.target.closest('[data-edit]');
+    if (ed) return clientSheet(clients.find((x) => x.id === ed.dataset.edit), () => viewEquipe('clientes'), (cl) => igSheet(cl, clients));
   };
   show(tab);
   bindCommon();
@@ -587,7 +583,8 @@ function memberSheet(p) {
       <div class="err" id="mf-err"></div>
       <div class="actions">
         <button class="btn btn-red" type="submit">${editing ? 'Salvar' : 'Cadastrar'} ${I.arrow}</button>
-        ${editing && p.id !== state.me.id ? `<button class="btn btn-ghost" type="button" id="mf-toggle">${p.active === false ? 'Reativar acesso' : 'Desativar acesso'}</button>` : ''}
+        ${editing && p.id !== state.me.id ? `<button class="btn btn-ghost" type="button" id="mf-toggle">${p.active === false ? 'Reativar acesso' : 'Desativar acesso'}</button>
+          <button class="btn btn-ghost" type="button" id="mf-remove" style="color:var(--red-hi)">Remover da equipe</button>` : ''}
       </div>
     </form>`,
   (root, close) => {
@@ -601,6 +598,11 @@ function memberSheet(p) {
           close(); toast(editing ? 'Pessoa atualizada.' : `${firstName(f.name)} cadastrado(a).`); viewEquipe();
         } catch (er) { $('#mf-err', root).textContent = er.message; }
       });
+    };
+    const rm = $('#mf-remove', root);
+    if (rm) rm.onclick = async () => {
+      if (!confirm(`Remover ${p.name} da equipe? Ela perde o acesso, mas tarefas, estrelas e histórico continuam registrados.`)) return;
+      try { await api.removeMember(p.id); close(); toast(`${firstName(p.name)} removido(a) da equipe.`); viewEquipe(); } catch (er) { $('#mf-err', root).textContent = er.message; }
     };
     const tg = $('#mf-toggle', root);
     if (tg) tg.onclick = async () => {

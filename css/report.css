@@ -143,3 +143,6 @@
 
 .rtable.fin td { font-size: 12px; }
 .rtable.fin td:nth-child(2) { max-width: 320px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* painéis abertos por cima do relatório */
+body:has(.rep-view) .overlay { z-index: 66; }
+body:has(.rep-view) .sheet { z-index: 67; }

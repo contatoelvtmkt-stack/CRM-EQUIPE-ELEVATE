@@ -10,12 +10,37 @@
         }
       ],
       "destination": "/api/og"
+    },
+    {
+      "source": "/relatorio.html",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(WhatsApp|facebookexternalhit|Facebot|Instagram|Twitterbot|TelegramBot|Slackbot|LinkedInBot|Discordbot|SkypeUriPreview|Googlebot|bingbot|Applebot|iMessage|redditbot|Pinterest|vkShare|Embedly).*"
+        }
+      ],
+      "destination": "/api/og?kind=relatorio"
     }
   ],
   "headers": [
     {
       "source": "/aprovacao.html",
-      "headers": [{ "key": "X-Robots-Tag", "value": "noindex" }]
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex"
+        }
+      ]
+    },
+    {
+      "source": "/relatorio.html",
+      "headers": [
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex"
+        }
+      ]
     }
   ]
 }

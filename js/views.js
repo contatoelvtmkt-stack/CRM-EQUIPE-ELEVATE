@@ -763,7 +763,8 @@ export async function viewRelatorios() {
 async function viewRelCliente(id) {
   const c = state.clients.find((x) => x.id === id) || (await api.clients()).find((x) => x.id === id);
   if (!c) { state.relClient = null; return viewRelatorios(); }
-  const list = await api.reports(id).catch(() => []);
+  const [list, fbs] = await Promise.all([api.reports(id).catch(() => []), api.feedbacks().catch(() => [])]);
+  const fbBy = Object.fromEntries(fbs.map((f) => [f.report_id, f]));
   const linked = c.ig_user_id || c.fb_page_id || c.ad_account_id;
   const [qs, qu] = QUICK[0][1]();
   view().innerHTML = `
@@ -793,7 +794,7 @@ async function viewRelCliente(id) {
           <div class="rep-list" id="rl">${list.length ? list.map((r, i) => `
             <button class="rep-item card rise" style="--i:${i}" data-r="${r.id}">
               <span class="ic">${I.chart}</span>
-              <span class="info"><b>${periodLabel(r.period_start, r.period_end)}</b><small>${r.kind === 'mensal' ? 'Mensal automático' : 'Período personalizado'} · gerado ${ago(r.created_at)}</small></span>
+              <span class="info"><b>${periodLabel(r.period_start, r.period_end)}</b><small>${r.kind === 'mensal' ? 'Mensal automático' : 'Período personalizado'} · gerado ${ago(r.created_at)}${fbBy[r.id] ? ` · <span class="stars-mini">${starsHtml(fbBy[r.id].stars)}</span>` : ''}</small></span>
               ${I.arrow}</button>`).join('') : emptyBox('Nenhum relatório ainda.<br>Gere o primeiro ao lado.')}</div>
         </div>
       </div>
@@ -826,6 +827,104 @@ async function viewRelCliente(id) {
 }
 
 // Visualizador do relatório (tela cheia) + exportar PDF na horizontal
+export const starsHtml = (n) => [1, 2, 3, 4, 5].map((k) => `<i class="${k <= n ? 'on' : ''}">★</i>`).join('');
+const reportUrl = (token) => `${location.origin}${location.pathname.replace(/[^/]*$/, '')}relatorio.html?t=${token}${api.demo ? '&demo' : ''}`;
+
+// link temporário (7 dias) para o cliente ver o relatório e avaliar
+async function reportShareSheet(r) {
+  const d = r.data;
+  const fb = (await api.feedbacks().catch(() => [])).find((f) => f.report_id === r.id);
+  openSheet(`
+    <div class="sheet-head"><div><small class="muted">Enviar relatório ao cliente</small><h2>${esc(d.client.name)} · ${periodLabel(d.since, d.until)}</h2></div><button class="icon-btn" data-close aria-label="Fechar">${I.x}</button></div>
+    <div class="appr card glow" id="rs"><p class="muted" style="font-size:13px">Carregando…</p></div>
+    <div class="section-title"><h2>Avaliação do cliente</h2></div>
+    ${fb ? `<div class="fbk card"><div class="fbk-h"><span class="stars-mini big">${starsHtml(fb.stars)}</span><small class="muted">${new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(fb.updated_at))}</small></div>${fb.comment ? `<p>${esc(fb.comment)}</p>` : '<p class="muted">Sem comentário.</p>'}</div>` : '<p class="muted" style="font-size:13px">O cliente ainda não avaliou este relatório.</p>'}`,
+  (root) => {
+    const box = $('#rs', root);
+    const draw = (l) => {
+      const valid = l && new Date(l.expires_at) > new Date();
+      const url = valid ? reportUrl(l.token) : '';
+      const days = valid ? Math.max(1, Math.ceil((new Date(l.expires_at) - Date.now()) / 864e5)) : 0;
+      const msg = `Olá! Segue o relatório de resultados de ${periodLabel(d.since, d.until)}. Depois conta pra gente o que achou: ${url}`;
+      box.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>${I.link} Link do relatório</b>${valid ? `<span class="tag solid">expira em ${days} dia${days > 1 ? 's' : ''}</span>` : ''}</div>
+        ${valid ? `<p class="muted" style="font-size:13px;margin:8px 0 10px;line-height:1.45">O cliente vê o relatório, baixa o PDF e avalia com estrelas e comentário, sem cadastro.</p>
+          <input class="input" readonly value="${esc(url)}" id="rs-url" style="font-size:13px;height:44px">
+          <div class="att-add" style="grid-template-columns:1fr 1fr 1fr">
+            <button class="btn btn-white btn-sm" id="rs-copy" style="width:100%">Copiar</button>
+            <a class="btn btn-ghost btn-sm" style="width:100%;text-decoration:none" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(msg)}">WhatsApp</a>
+            <a class="btn btn-ghost btn-sm" style="width:100%;text-decoration:none" target="_blank" rel="noopener" href="${esc(url)}">Abrir</a>
+          </div>` : `<p class="muted" style="font-size:13px;margin:8px 0 10px">${l ? 'O link expirou.' : 'Ainda não há link para este relatório.'}</p>`}
+        <button class="btn ${valid ? 'btn-ghost' : 'btn-red'} btn-sm" id="rs-new" style="width:100%;margin-top:6px">${valid ? 'Gerar novo link' : 'Gerar link de 7 dias'}</button>`;
+      const cp = $('#rs-copy', box);
+      if (cp) cp.onclick = async () => { try { await navigator.clipboard.writeText(url); } catch { $('#rs-url', box).select(); document.execCommand('copy'); } toast('Link copiado!'); };
+      $('#rs-new', box).onclick = (e) => busy(e.currentTarget, async () => {
+        try { await api.newReportLink(r.id); draw(await api.reportLink(r.id)); toast(valid ? 'Novo link gerado. O anterior deixou de funcionar.' : 'Link gerado.'); } catch (er) { toast(er.message); }
+      });
+    };
+    api.reportLink(r.id).then(draw).catch((er) => (box.innerHTML = `<p class="err">${esc(er.message)}</p>`));
+  });
+}
+
+// =====================================================================
+// SATISFAÇÃO DOS CLIENTES (avaliações dos relatórios)
+// =====================================================================
+export async function viewSatisfacao() {
+  const [fbs, clients] = await Promise.all([api.feedbacks().catch(() => []), api.clients()]);
+  state.clients = clients;
+  const byClient = {};
+  fbs.forEach((f) => { (byClient[f.client_id] ||= []).push(f); });
+  const avg = (l) => (l.length ? l.reduce((a, f) => a + f.stars, 0) / l.length : 0);
+  const all = avg(fbs);
+  const top = fbs.filter((f) => f.stars >= 4).length;
+  const dist = [5, 4, 3, 2, 1].map((n) => ({ n, c: fbs.filter((f) => f.stars === n).length }));
+  const maxD = Math.max(1, ...dist.map((x) => x.c));
+  const cl = (id) => clients.find((c) => c.id === id) || { name: 'Cliente removido' };
+  const fmtDT = (ts) => new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(ts));
+  const filter = state.satClient || '';
+  const shown = fbs.filter((f) => !filter || f.client_id === filter);
+  view().innerHTML = `${topBar('Avaliações dos relatórios', 'Satisfação', '')}
+    <div class="page">
+      <div class="dash" style="margin-top:10px">
+        <div class="col-a">
+          <section class="hero rise" style="--i:1">
+            <div class="label"><b>Satisfação geral</b><span>· ${fbs.length} avaliaç${fbs.length === 1 ? 'ão' : 'ões'}</span></div>
+            <div class="big">${fbs.length ? all.toFixed(1).replace('.', ',') : '—'}<small> de 5</small></div>
+            <span class="stars-mini big dark">${starsHtml(Math.round(all))}</span>
+            <p style="margin-top:8px">${fbs.length ? `${Math.round((top / fbs.length) * 100)}% das avaliações com 4 ou 5 estrelas.` : 'Envie os relatórios aos clientes para receber avaliações.'}</p>
+            <img class="seta-up" src="assets/img/seta.svg" alt="">
+          </section>
+          <section class="card chart-card rise" style="--i:2;margin-top:12px"><h3>Distribuição <small>quantas avaliações por nota</small></h3>
+            <div class="sdist">${dist.map((x) => `<div><span>${x.n} ★</span><i><b style="width:${(x.c / maxD) * 100}%"></b></i><em>${x.c}</em></div>`).join('')}</div>
+          </section>
+          <div class="section-title"><h2>Por cliente</h2><span>média das avaliações</span></div>
+          <div class="list">${Object.entries(byClient).sort((a, b) => avg(b[1]) - avg(a[1])).map(([cid, l], i) => `
+            <button class="person card rise ${filter === cid ? 'sel' : ''}" style="--i:${i}" data-sc="${cid}">
+              <span class="client-logo" style="width:40px;height:40px">${cl(cid).logo_url ? `<img src="${esc(cl(cid).logo_url)}" alt="">` : I.building}</span>
+              <span class="info"><b>${esc(cl(cid).name)}</b><small>${l.length} avaliaç${l.length === 1 ? 'ão' : 'ões'} · última ${fmtDT(l[0].updated_at)}</small></span>
+              <span class="sat-avg"><b>${avg(l).toFixed(1).replace('.', ',')}</b><span class="stars-mini">${starsHtml(Math.round(avg(l)))}</span></span>
+            </button>`).join('') || emptyBox('Nenhuma avaliação ainda.')}</div>
+        </div>
+        <div class="col-b">
+          <div class="section-title"><h2>Avaliações</h2><span>${filter ? `${esc(cl(filter).name)} · <button class="linkish" id="sc-all">ver todos</button>` : 'mais recentes primeiro'}</span></div>
+          <div class="list" id="fb-list">${shown.map((f, i) => `
+            <button class="fbk card rise" style="--i:${i}" data-rep="${f.report_id}">
+              <span class="fbk-h"><span><b>${esc(cl(f.client_id).name)}</b><small class="muted">${f.reports ? 'Relatório ' + periodLabel(f.reports.period_start, f.reports.period_end) : 'Relatório removido'}</small></span>
+                <span class="stars-mini big">${starsHtml(f.stars)}</span></span>
+              ${f.comment ? `<p>“${esc(f.comment)}”</p>` : '<p class="muted">Sem comentário.</p>'}
+              <span class="fbk-f"><small class="muted">Avaliado em ${fmtDT(f.updated_at)}</small>${f.reports ? `<span class="tag">${I.report} Abrir relatório</span>` : ''}</span>
+            </button>`).join('') || emptyBox('Nenhuma avaliação ainda.')}</div>
+        </div>
+      </div>
+    </div>`;
+  bindCommon();
+  view().querySelectorAll('[data-sc]').forEach((b) => (b.onclick = () => { state.satClient = state.satClient === b.dataset.sc ? '' : b.dataset.sc; viewSatisfacao(); }));
+  const sa = $('#sc-all'); if (sa) sa.onclick = () => { state.satClient = ''; viewSatisfacao(); };
+  $('#fb-list').onclick = async (e) => {
+    const b = e.target.closest('[data-rep]'); if (!b) return;
+    try { const r = await api.report(b.dataset.rep); if (r) openReport(r, () => {}); } catch (er) { toast(er.message); }
+  };
+}
+
 function openReport(r, onClose) {
   const d = r.data;
   const el = document.createElement('div');
@@ -835,6 +934,7 @@ function openReport(r, onClose) {
       <button class="icon-btn" data-x aria-label="Voltar">${I.back}</button>
       <div class="t"><b>${esc(d.client.name)}</b><small>${periodLabel(d.since, d.until)}</small></div>
       ${isManager() ? `<button class="icon-btn" data-del aria-label="Excluir relatório" title="Excluir">${I.x}</button>` : ''}
+      <button class="btn btn-white btn-sm" data-share>${I.link} Enviar ao cliente</button>
       <button class="btn btn-red btn-sm" data-pdf>${I.file} Exportar PDF</button>
     </div>
     <div class="rep-scroll"><div class="rep-pages">${renderReport(d).replace(/<section class="rep-page">/g, '<div class="rep-fit"><section class="rep-page">').replace(/<\/section>/g, '</section></div>')}</div></div>`;
@@ -851,6 +951,7 @@ function openReport(r, onClose) {
   document.addEventListener('keydown', onKey);
   const del = el.querySelector('[data-del]');
   if (del) del.onclick = async () => { if (!confirm('Excluir este relatório?')) return; try { await api.deleteReport(r.id); toast('Relatório excluído.'); close(); } catch (er) { toast(er.message); } };
+  el.querySelector('[data-share]').onclick = () => reportShareSheet(r);
   el.querySelector('[data-pdf]').onclick = async () => {
     const pr = $('#print-root');
     pr.innerHTML = renderReport(d);

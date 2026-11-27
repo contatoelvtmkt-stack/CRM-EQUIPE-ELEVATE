@@ -3,7 +3,7 @@ import { JEREMIAS_SVG, TURTLE_SVG } from './avatars.js';
 import { ONBOARDING_EVERY_MIN, JEREMIAS_EVERY_MIN } from './config.js';
 import { I, state, isManager, isReviewer, $, esc, face, toast, busy, hideTip, ROLES, sheetOpen } from './ui.js';
 import { taskCard, newTaskSheet } from './tasks.js';
-import { viewHoje, viewPainel, viewFluxo, viewRanking, viewChat, viewEnergia, viewEquipe, viewPerfil, viewMais, viewRelatorios } from './views.js';
+import { viewHoje, viewPainel, viewFluxo, viewRanking, viewChat, viewEnergia, viewEquipe, viewPerfil, viewMais, viewRelatorios, viewSatisfacao } from './views.js';
 import { viewSaldos, viewFinanceiro, loadLowBalances, lowBalancePopup, isAdsTeam } from './admin.js';
 
 const store = {
@@ -110,7 +110,7 @@ function renderWaiting() {
 // ---------------------------------------------------------------------
 function menuItems() {
   const items = [['hoje', 'Hoje', I.home], ['painel', 'Painel', I.chart]];
-  if (isReviewer()) items.push(['fluxo', 'Fluxo de conteúdo', I.flow], ['relatorios', 'Relatórios', I.report]);
+  if (isReviewer()) items.push(['fluxo', 'Fluxo de conteúdo', I.flow], ['relatorios', 'Relatórios', I.report], ['satisfacao', 'Satisfação dos clientes', I.star]);
   items.push(['ranking', 'Ranking', I.trophy], ['chat', 'Chat da equipe', I.chat]);
   if (isAdsTeam()) items.push(['saldos', 'Saldos de anúncios', I.wallet]);
   if (state.me.role === 'admin') items.push(['financeiro', 'Financeiro', I.cash]);
@@ -182,11 +182,11 @@ async function render() {
   }));
   const views = {
     hoje: viewHoje, painel: viewPainel, fluxo: viewFluxo, ranking: viewRanking, chat: viewChat,
-    energia: viewEnergia, equipe: viewEquipe, perfil: viewPerfil, relatorios: viewRelatorios, saldos: viewSaldos, financeiro: () => viewFinanceiro(), mais: () => viewMais(moreItems)
+    energia: viewEnergia, equipe: viewEquipe, perfil: viewPerfil, relatorios: viewRelatorios, satisfacao: viewSatisfacao, saldos: viewSaldos, financeiro: () => viewFinanceiro(), mais: () => viewMais(moreItems)
   };
   if (state.tab !== 'relatorios') state.relClient = null;
   if ((state.tab === 'saldos' && !isAdsTeam()) || (state.tab === 'financeiro' && state.me.role !== 'admin')) state.tab = 'hoje';
-  if ((['fluxo', 'relatorios'].includes(state.tab) && !isReviewer()) || (['energia', 'equipe'].includes(state.tab) && !isManager())) state.tab = 'hoje';
+  if ((['fluxo', 'relatorios', 'satisfacao'].includes(state.tab) && !isReviewer()) || (['energia', 'equipe'].includes(state.tab) && !isManager())) state.tab = 'hoje';
   saveTab();
   currentView = views[state.tab];
   try { await views[state.tab](); } catch (e) { toast(e.message); }

@@ -206,6 +206,9 @@ function supabaseApi() {
     async lastReports() { return ok(await sb.from('reports').select('client_id,period_start,period_end,created_at').order('created_at', { ascending: false }).limit(300)); },
     async report(id) { return ok(await sb.from('reports').select('*').eq('id', id).single()); },
     async deleteReport(id) { ok(await sb.from('reports').delete().eq('id', id)); },
+    async reportLink(reportId) { return (ok(await sb.from('report_links').select('*').eq('report_id', reportId).order('created_at', { ascending: false }).limit(1)))[0] || null; },
+    async newReportLink(reportId) { return ok(await sb.rpc('new_report_link', { p_report: reportId })); },
+    async feedbacks() { return ok(await sb.from('report_feedback').select('*, reports(id, period_start, period_end, kind)').order('updated_at', { ascending: false }).limit(500)); },
     async generateReport(clientId, since, until, kind = 'personalizado') {
       const { data, error } = await sb.functions.invoke('meta-report', { body: { client_id: clientId, since, until, kind } });
       if (error) {
@@ -384,6 +387,11 @@ function demoApi() {
     const c = clients.find((x) => x.id === 'c3');
     demoReports.push({ id: 'rep' + k, client_id: 'c3', kind: 'mensal', period_start: since, period_end: until, created_at: new Date().toISOString(), data: fakeReport(c, since, until) });
   });
+  const demoLinks = [];
+  const demoFeedback = [
+    { id: 'f1', report_id: 'rep1', client_id: 'c3', stars: 5, comment: 'Adoramos ver o crescimento do alcance! Os Reels estão bombando.', created_at: iso(3 * 864e5), updated_at: iso(3 * 864e5) },
+    { id: 'f2', report_id: 'rep2', client_id: 'c3', stars: 4, comment: 'Bom mês. Queremos mais conteúdo de bastidores.', created_at: iso(33 * 864e5), updated_at: iso(33 * 864e5) }
+  ];
   let me = people[0];
   const isRev = () => ['admin', 'gestora', 'social_media'].includes(me.role);
   const isMgr = () => ['admin', 'gestora'].includes(me.role);
@@ -538,6 +546,11 @@ function demoApi() {
     async lastReports() { return wait(demoReports); },
     async report(id) { return wait(demoReports.find((r) => r.id === id)); },
     async deleteReport(id) { demoReports.splice(demoReports.findIndex((r) => r.id === id), 1); },
+    async reportLink(reportId) { return demoLinks.find((l) => l.report_id === reportId) || null; },
+    async newReportLink(reportId) { const l = { token: 'demo', report_id: reportId, created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 7 * 864e5).toISOString() }; demoLinks.unshift(l); return 'demo'; },
+    async feedbacks() {
+      return wait(demoFeedback.map((f) => { const r = demoReports.find((x) => x.id === f.report_id); return { ...f, reports: r ? { id: r.id, period_start: r.period_start, period_end: r.period_end, kind: r.kind } : null }; }));
+    },
     async generateReport(clientId, since, until, kind = 'personalizado') {
       await new Promise((r) => setTimeout(r, 700));
       const c = clients.find((k) => k.id === clientId);

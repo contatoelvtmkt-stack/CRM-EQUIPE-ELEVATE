@@ -735,6 +735,69 @@ begin
   update public.ad_balances b set low = (b.available is not null and b.available <= greatest(0, p_value)) where b.client_id = p_client;
 end $$;
 
+
+-- ---------- Relatório para o cliente: link temporário e avaliação --------
+create table if not exists public.report_links (
+  token      text primary key default replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''),
+  report_id  uuid not null references public.reports(id) on delete cascade,
+  created_by uuid references public.profiles(id) on delete set null default auth.uid(),
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null default now() + interval '7 days'
+);
+create index if not exists report_links_report on public.report_links (report_id, created_at desc);
+
+create table if not exists public.report_feedback (
+  id         uuid primary key default gen_random_uuid(),
+  report_id  uuid not null unique references public.reports(id) on delete cascade,
+  client_id  uuid references public.clients(id) on delete set null,
+  stars      int not null check (stars between 1 and 5),
+  comment    text not null default '' check (length(comment) <= 3000),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists report_feedback_client on public.report_feedback (client_id, updated_at desc);
+
+-- equipe: gera um link novo (encerra os anteriores do mesmo relatório)
+create or replace function public.new_report_link(p_report uuid) returns text
+language plpgsql security definer set search_path = public as $$
+declare tok text;
+begin
+  if not public.is_reviewer() then raise exception 'Sem permissão'; end if;
+  update public.report_links set expires_at = least(expires_at, now()) where report_id = p_report and expires_at > now();
+  insert into public.report_links (report_id, created_by) values (p_report, auth.uid()) returning token into tok;
+  return tok;
+end $$;
+
+-- PÚBLICO: o cliente abre o relatório pelo link
+create or replace function public.get_report_share(p_token text) returns json
+language plpgsql stable security definer set search_path = public as $$
+declare l public.report_links; r public.reports; f public.report_feedback;
+begin
+  select * into l from public.report_links where token = p_token;
+  if not found then return json_build_object('state', 'invalido'); end if;
+  if l.expires_at <= now() then return json_build_object('state', 'expirado'); end if;
+  select * into r from public.reports where id = l.report_id;
+  if not found then return json_build_object('state', 'invalido'); end if;
+  select * into f from public.report_feedback where report_id = r.id;
+  return json_build_object('state', 'aberto', 'expires_at', l.expires_at, 'data', r.data,
+    'feedback', case when f.id is null then null else json_build_object('stars', f.stars, 'comment', f.comment, 'updated_at', f.updated_at) end);
+end $$;
+
+-- PÚBLICO: o cliente dá estrelas e feedback (pode editar enquanto o link valer)
+create or replace function public.submit_report_feedback(p_token text, p_stars int, p_comment text default '')
+returns json language plpgsql security definer set search_path = public as $$
+declare l public.report_links; r public.reports;
+begin
+  select * into l from public.report_links where token = p_token;
+  if not found or l.expires_at <= now() then raise exception 'Este link não está mais disponível.'; end if;
+  if p_stars is null or p_stars < 1 or p_stars > 5 then raise exception 'Escolha de 1 a 5 estrelas.'; end if;
+  select * into r from public.reports where id = l.report_id;
+  insert into public.report_feedback (report_id, client_id, stars, comment)
+  values (r.id, r.client_id, p_stars, left(coalesce(trim(p_comment), ''), 3000))
+  on conflict (report_id) do update set stars = excluded.stars, comment = excluded.comment, updated_at = now();
+  return json_build_object('ok', true);
+end $$;
+
 -- ---------- Segurança (RLS) ---------------------------------------------
 alter table public.profiles         enable row level security;
 alter table public.tasks            enable row level security;
@@ -797,6 +860,15 @@ drop policy if exists "apagar comentario" on public.task_comments;
 create policy "apagar comentario" on public.task_comments for delete to authenticated
   using (user_id = auth.uid() or public.is_manager());
 
+alter table public.report_links    enable row level security;
+alter table public.report_feedback enable row level security;
+drop policy if exists "ver links de relatorio" on public.report_links;
+create policy "ver links de relatorio" on public.report_links for select to authenticated using (public.is_reviewer());
+drop policy if exists "ver avaliacoes" on public.report_feedback;
+create policy "ver avaliacoes" on public.report_feedback for select to authenticated using (public.is_reviewer());
+drop policy if exists "apagar avaliacoes" on public.report_feedback;
+create policy "apagar avaliacoes" on public.report_feedback for delete to authenticated using (public.is_manager());
+
 alter table public.reports enable row level security;
 drop policy if exists "ver relatorios" on public.reports;
 create policy "ver relatorios" on public.reports for select to authenticated using (public.is_reviewer());
@@ -855,6 +927,11 @@ grant execute on function public.review_task(uuid, text, text, text) to authenti
 grant execute on function public.confirm_schedule(uuid, timestamptz, text, text) to authenticated;
 grant execute on function public.unconfirm_schedule(uuid) to authenticated;
 grant execute on function public.publish_now(uuid) to authenticated;
+grant select on public.report_links to authenticated;
+grant select, delete on public.report_feedback to authenticated;
+grant execute on function public.new_report_link(uuid) to authenticated;
+grant execute on function public.get_report_share(text) to anon, authenticated;
+grant execute on function public.submit_report_feedback(text, int, text) to anon, authenticated;
 grant select, insert, delete on public.task_comments to authenticated;
 grant execute on function public.delete_task(uuid) to authenticated;
 grant select, insert, update, delete on public.client_plans, public.finance_entries, public.goals to authenticated;

@@ -742,3 +742,28 @@ body.is-dragging .chips button.drop-on { border-style: solid; }
 .refresh-btn { margin-left: 4px; }
 .refresh-btn.spin svg { animation: spin .8s linear infinite; }
 .chat-head .refresh-btn { margin-left: auto; }
+
+/* ---------- Satisfação ---------- */
+.stars-mini { display: inline-flex; gap: 1px; letter-spacing: 0; }
+.stars-mini i { font-style: normal; color: var(--s3); }
+.stars-mini i.on { color: var(--red-hi); }
+.stars-mini.big i { font-size: 18px; }
+.stars-mini.dark i { color: rgba(24,24,24,.2); font-size: 22px; } .stars-mini.dark i.on { color: var(--red); }
+.sat-avg { display: grid; justify-items: end; gap: 2px; }
+.sat-avg b { font-size: 22px; font-weight: 500; }
+.person.sel { border-color: var(--red); }
+.fbk { display: grid; gap: 8px; padding: 14px; text-align: left; width: 100%; transition: .2s; }
+button.fbk:hover { border-color: var(--line-hi); transform: translateY(-1px); }
+.fbk-h { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.fbk-h b { font-weight: 500; display: block; }
+.fbk-h small { font-size: 12px; }
+.fbk p { line-height: 1.5; font-size: 14px; color: #d6d6d6; }
+.fbk-f { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.fbk-f .tag svg { width: 11px; height: 11px; }
+.sdist { display: grid; gap: 8px; margin-top: 12px; }
+.sdist > div { display: grid; grid-template-columns: 42px 1fr 28px; align-items: center; gap: 10px; font-size: 13px; }
+.sdist i { display: block; height: 10px; background: var(--s3); }
+.sdist i b { display: block; height: 100%; background: var(--red); box-shadow: 0 0 10px var(--red-glow); }
+.sdist em { font-style: normal; color: var(--muted); text-align: right; }
+.linkish { color: var(--red-hi); text-decoration: underline; font-size: 13px; }
+.rep-bar .btn-white { margin-right: 4px; }

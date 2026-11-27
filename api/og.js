@@ -8,11 +8,26 @@ const esc = (s = '') => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<
 module.exports = async (req, res) => {
   const token = String(req.query.t || '').replace(/[^a-f0-9]/gi, '').slice(0, 80);
   const host = `https://${req.headers['x-forwarded-host'] || req.headers.host}`;
-  const pageUrl = `${host}/aprovacao.html?t=${token}`;
+  const isReport = req.query.kind === 'relatorio';
+  const pageUrl = `${host}/${isReport ? 'relatorio' : 'aprovacao'}.html?t=${token}`;
   let title = 'Aprovação de conteúdo';
   let desc = 'Veja o conteúdo preparado pela Elevate e responda em um toque.';
   let image = `${host}/assets/img/og-elevate.jpg`;
-  try {
+  if (isReport) {
+    title = 'Relatório de resultados';
+    desc = 'Veja os resultados do mês e conte o que achou.';
+    try {
+      const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_report_share`, {
+        method: 'POST', headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_token: token })
+      });
+      const d = await r.json();
+      if (d?.data?.client) {
+        title = `Relatório de resultados · ${d.data.client.name}`;
+        if (d.data.client.logo_url) image = d.data.client.logo_url;
+      }
+    } catch { /* prévia padrão */ }
+  } else try {
     const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_approval`, {
       method: 'POST',
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json' },

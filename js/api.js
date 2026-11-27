@@ -86,7 +86,7 @@ function supabaseApi() {
       const id = await getUid();
       const blob = await squareImage(file);
       const path = `${id}/${Date.now()}.jpg`;
-      ok(await sb.storage.from('avatars').upload(path, blob, { contentType: 'image/jpeg', upsert: true }));
+      ok(await sb.storage.from('avatars').upload(path, blob, { contentType: 'image/jpeg' }));
       const url = sb.storage.from('avatars').getPublicUrl(path).data.publicUrl;
       return ok(await sb.from('profiles').update({ photo_url: url }).eq('id', id).select().single());
     },

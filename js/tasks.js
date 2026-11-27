@@ -219,7 +219,7 @@ export function taskSheet(t, onDone) {
     ${doneBlock}${schedBlock || pubInfo}
 
     ${rev && flowActions.length ? `
-    <div class="section-title" style="margin-top:8px"><h2>Fluxo de conteúdo</h2><span>${STAGE[t.stage]}</span></div>
+    <div class="section-title" style="margin-top:8px"><h2>Kanban</h2><span>${STAGE[t.stage]}</span></div>
     <div class="field hidden" id="nf"><label for="note">O que precisa mudar? <span class="red">*</span></label>
       <textarea class="input" id="note" placeholder="Descreva o ajuste para ${esc(firstName(p.name))}"></textarea></div>
     <div class="err" id="fl-err"></div>

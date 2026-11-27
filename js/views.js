@@ -176,7 +176,7 @@ export async function viewFluxo() {
   const all = await api.pipeline();
   const cutoff = new Date(Date.now() - 30 * 86400e3).toISOString();
   const items = all.filter((t) => t.stage !== 'concluido' || t.stage_at >= cutoff);
-  view().innerHTML = `${topBar('Do briefing à postagem', 'Fluxo de conteúdo', `<button class="icon-btn" id="fx-new" aria-label="Nova tarefa">${I.plus}</button>`)}
+  view().innerHTML = `${topBar('Do briefing à postagem', 'Kanban', `<button class="icon-btn" id="fx-new" aria-label="Nova tarefa">${I.plus}</button>`)}
     <div class="page">
       <div class="grid-2 rise" style="--i:1;margin-top:10px;gap:8px;display:grid">
         <label class="search"><span class="sr">Pesquisar</span>${I.search}<input class="input" id="q" type="search" placeholder="Pesquisar tarefa, cliente ou pessoa" value="${esc(state.fluxoQuery)}"></label>

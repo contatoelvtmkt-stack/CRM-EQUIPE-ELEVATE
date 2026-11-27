@@ -110,7 +110,7 @@ function renderWaiting() {
 // ---------------------------------------------------------------------
 function menuItems() {
   const items = [['hoje', 'Hoje', I.home], ['painel', 'Painel', I.chart]];
-  if (isReviewer()) items.push(['fluxo', 'Fluxo de conteúdo', I.flow], ['relatorios', 'Relatórios', I.report], ['satisfacao', 'Satisfação dos clientes', I.star]);
+  if (isReviewer()) items.push(['fluxo', 'Kanban', I.flow], ['relatorios', 'Relatórios', I.report], ['satisfacao', 'Satisfação', I.star]);
   items.push(['ranking', 'Ranking', I.trophy], ['chat', 'Chat da equipe', I.chat]);
   if (isAdsTeam()) items.push(['saldos', 'Saldos de anúncios', I.wallet]);
   if (state.me.role === 'admin') items.push(['financeiro', 'Financeiro', I.cash]);

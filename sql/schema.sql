@@ -36,6 +36,7 @@ alter table public.clients add column if not exists logo_url text;
 alter table public.clients add column if not exists notes text not null default '';
 alter table public.clients add column if not exists removed_at timestamptz;
 alter table public.clients add column if not exists ad_alert_threshold numeric(12,2) not null default 30;
+alter table public.clients add column if not exists color text;
 alter table public.clients add column if not exists instagram text;
 -- conta do Instagram usada para publicar (vinculada pelo token do usuário do sistema)
 alter table public.clients add column if not exists ig_user_id  text;
@@ -417,6 +418,37 @@ begin
 end $$;
 
 
+
+-- ---------- Comentários da tarefa (equipe e cliente) ----------------------
+create table if not exists public.task_comments (
+  id          uuid primary key default gen_random_uuid(),
+  root_id     uuid not null,
+  user_id     uuid references public.profiles(id) on delete set null default auth.uid(),
+  author_name text not null default '',
+  body        text not null check (length(body) between 1 and 4000),
+  from_client boolean not null default false,
+  kind        text not null default 'comentario' check (kind in ('comentario','alteracao','aprovacao')),
+  created_at  timestamptz not null default now()
+);
+create index if not exists task_comments_root on public.task_comments (root_id, created_at);
+
+-- ---------- Excluir a peça inteira (todas as cópias de dias) -------------
+create or replace function public.delete_task(p_id uuid) returns void
+language plpgsql security definer set search_path = public as $$
+declare t public.tasks;
+begin
+  select * into t from public.tasks where id = p_id;
+  if not found then return; end if;
+  if not (public.is_manager() or exists (select 1 from public.tasks x where x.root_id = t.root_id and x.created_by = auth.uid())) then
+    raise exception 'Sem permissão';
+  end if;
+  perform set_config('app.bypass', 'on', true);
+  delete from public.task_attachments where root_id = t.root_id;
+  delete from public.approval_links  where root_id = t.root_id;
+  delete from public.task_comments   where root_id = t.root_id;
+  delete from public.tasks           where root_id = t.root_id;
+end $$;
+
 -- ---------- Aprovação do cliente: links temporários ---------------------
 create table if not exists public.approval_links (
   token      text primary key default replace(gen_random_uuid()::text || gen_random_uuid()::text, '-', ''),
@@ -443,6 +475,10 @@ declare t public.tasks; d date := public.today_br();
 begin
   perform set_config('app.bypass', 'on', true);
   select * into t from public.tasks where id = p_id;
+  if p_by is not null and coalesce(p_note, '') <> '' then
+    insert into public.task_comments (root_id, user_id, author_name, body, kind)
+    values (t.root_id, p_by, coalesce((select name from public.profiles where id = p_by), ''), p_note, 'alteracao');
+  end if;
   if t.task_date = d and t.status <> 'finalizada' then
     update public.tasks set status = 'em_alteracao', stage = 'em_alteracao', review_note = coalesce(p_note,''),
            stage_at = now(), completed_at = null where id = t.id;
@@ -540,6 +576,10 @@ begin
       values (l.root_id, 'file', f->>'path', 'Cliente – ' || coalesce(f->>'name', 'arquivo'), null);
     end if;
   end loop;
+  insert into public.task_comments (root_id, user_id, author_name, body, from_client, kind)
+  values (l.root_id, null, coalesce((select c.name from public.clients c where c.id = t.client_id), 'Cliente'),
+          case when p_decision = 'aprovado' then 'Aprovou o conteúdo pelo link de aprovação.' else trim(p_note) end,
+          true, case when p_decision = 'aprovado' then 'aprovacao' else 'alteracao' end);
   if p_decision = 'aprovado' then
     update public.tasks set stage = 'agendamento', stage_at = now() where id = t.id;
   else
@@ -745,6 +785,18 @@ create policy "saldos: tráfego" on public.ad_balances for select to authenticat
 drop policy if exists "saldos historico: tráfego" on public.ad_balance_history;
 create policy "saldos historico: tráfego" on public.ad_balance_history for select to authenticated using (public.is_ads_team());
 
+alter table public.task_comments enable row level security;
+drop policy if exists "ver comentarios" on public.task_comments;
+create policy "ver comentarios" on public.task_comments for select to authenticated
+  using (public.is_reviewer() or exists (select 1 from public.tasks t where t.root_id = task_comments.root_id and t.assigned_to = auth.uid()));
+drop policy if exists "comentar" on public.task_comments;
+create policy "comentar" on public.task_comments for insert to authenticated
+  with check (user_id = auth.uid() and not from_client and kind = 'comentario'
+              and (public.is_reviewer() or exists (select 1 from public.tasks t where t.root_id = task_comments.root_id and t.assigned_to = auth.uid())));
+drop policy if exists "apagar comentario" on public.task_comments;
+create policy "apagar comentario" on public.task_comments for delete to authenticated
+  using (user_id = auth.uid() or public.is_manager());
+
 alter table public.reports enable row level security;
 drop policy if exists "ver relatorios" on public.reports;
 create policy "ver relatorios" on public.reports for select to authenticated using (public.is_reviewer());
@@ -803,6 +855,8 @@ grant execute on function public.review_task(uuid, text, text, text) to authenti
 grant execute on function public.confirm_schedule(uuid, timestamptz, text, text) to authenticated;
 grant execute on function public.unconfirm_schedule(uuid) to authenticated;
 grant execute on function public.publish_now(uuid) to authenticated;
+grant select, insert, delete on public.task_comments to authenticated;
+grant execute on function public.delete_task(uuid) to authenticated;
 grant select, insert, update, delete on public.client_plans, public.finance_entries, public.goals to authenticated;
 grant select on public.ad_balances, public.ad_balance_history to authenticated;
 grant execute on function public.remove_member(uuid) to authenticated;
@@ -859,8 +913,15 @@ end $$;
 -- ---------- Chat em tempo real -------------------------------------------
 do $$
 begin
-  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
-     and not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'messages') then
-    alter publication supabase_realtime add table public.messages;
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'messages') then
+      alter publication supabase_realtime add table public.messages;
+    end if;
+    if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'tasks') then
+      alter publication supabase_realtime add table public.tasks;
+    end if;
+    if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'task_comments') then
+      alter publication supabase_realtime add table public.task_comments;
+    end if;
   end if;
 end $$;

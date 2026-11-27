@@ -675,3 +675,70 @@ body.is-dragging .chips button.drop-on { border-style: solid; }
 .fe-v { font-weight: 500; white-space: nowrap; }
 .fe .btn-sm { height: 32px; padding: 0 10px; flex: none; }
 @media (min-width: 1000px) { .kpis.k5 { grid-template-columns: repeat(5, 1fr); } .kpis.k5 > :first-child { grid-column: auto; } }
+
+/* ---------- Faixa de cor do cliente ---------- */
+.kcard.has-cc, .task.has-cc { border-top: 4px solid var(--cc, var(--line)); }
+.kcard.has-cc .cname { display: inline-flex; align-items: center; gap: 6px; color: var(--white); }
+.kcard.has-cc .cname::before { content: ''; width: 8px; height: 8px; background: var(--cc); flex: none; }
+.task.has-cc .client { display: inline-flex; align-items: center; gap: 6px; }
+.task.has-cc .client::before { content: ''; width: 8px; height: 8px; background: var(--cc); flex: none; }
+.color-row { display: flex; align-items: center; gap: 10px; }
+.color-row input[type=color] { width: 50px; height: 44px; padding: 2px; background: var(--s1); border: 1px solid var(--line); cursor: pointer; }
+
+/* ---------- Kanban: minimizar etapas ---------- */
+.kmin { display: none; width: 24px; height: 24px; place-items: center; color: var(--muted); border: 1px solid var(--line); margin-left: 6px; flex: none; }
+.kmin svg { width: 12px; height: 12px; }
+.kmin:hover { color: var(--white); border-color: var(--line-hi); }
+@media (min-width: 1000px) {
+  .kmin { display: grid; }
+  .kcol-head { gap: 6px; }
+  .kcol-head span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kcol.min { cursor: pointer; padding: 8px 4px; align-items: center; }
+  .kcol.min > :not(.kcol-head) { display: none !important; }
+  .kcol.min .kcol-head { flex-direction: column; border: 0; gap: 10px; padding: 0; }
+  .kcol.min .kcol-head span { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; overflow: visible; font-size: 13px; }
+  .kcol.min .kmin { order: -1; margin: 0; }
+}
+
+/* ---------- Formas de abrir a tarefa ---------- */
+.sheet-modes { display: flex; gap: 4px; margin-left: auto; }
+.sheet-modes button { width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--line); background: var(--s1); color: var(--muted); }
+.sheet-modes button svg { width: 16px; height: 16px; }
+.sheet-modes button.on { border-color: var(--red); color: var(--white); }
+.sheet-head { align-items: center; }
+.overlay.m-center { backdrop-filter: blur(10px); background: rgba(0,0,0,.55); }
+.sheet.m-center {
+  top: 50%; bottom: auto; left: 50%; right: auto; transform: translate(-50%, -50%); width: min(760px, calc(100vw - 32px)); max-width: none;
+  max-height: 88dvh; border-top: 0; border: 1px solid var(--line-hi); box-shadow: 0 30px 90px rgba(0,0,0,.6), 0 0 60px rgba(204,0,0,.18);
+  animation: pop-c .3s var(--ease);
+}
+@keyframes pop-c { from { opacity: 0; transform: translate(-50%, -46%) scale(.97); } }
+.sheet.m-full { inset: 0; width: auto; max-width: none; max-height: none; height: 100dvh; border-top: 2px solid var(--red); animation: fade .2s; }
+.sheet.m-full > * { max-width: 980px; margin-left: auto; margin-right: auto; }
+@media (min-width: 1000px) {
+  .sheet.m-center { left: 50%; right: auto; top: 50%; bottom: auto; border-left: 1px solid var(--line-hi); padding: 26px 30px; }
+  .sheet.m-full { left: 0; right: 0; width: auto; border-left: 0; padding: 30px 40px; }
+}
+
+/* ---------- Comentários da tarefa ---------- */
+.cmts { display: flex; flex-direction: column; gap: 10px; max-height: 340px; overflow-y: auto; padding: 4px 2px; }
+.cmt { display: flex; gap: 8px; max-width: 92%; }
+.cmt.mine { align-self: flex-end; flex-direction: row-reverse; }
+.cmt .bubble-m { padding: 9px 12px; background: var(--s2); border: 1px solid var(--line); line-height: 1.45; font-size: 14px; white-space: pre-wrap; word-break: break-word; }
+.cmt.mine .bubble-m { background: linear-gradient(160deg, #d10f0f, #a30000); border-color: transparent; color: #fff; }
+.cmt.client .bubble-m { border-color: var(--red); background: rgba(204,0,0,.12); }
+.cmt .who-m { font-size: 11px; color: var(--muted); margin-bottom: 4px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cmt .who-m b { color: var(--white); font-weight: 500; }
+.cmt .who-m .tag { font-size: 10px; padding: 1px 6px; }
+.cmt .who-m .x { color: var(--muted); padding: 0 2px; }
+.cmt .who-m .x svg { width: 11px; height: 11px; }
+.cmt.mine .who-m { justify-content: flex-end; }
+.cmt-av { width: 30px; height: 30px; flex: none; display: grid; place-items: center; background: var(--red); color: #fff; font-weight: 500; font-size: 13px; }
+.cm-form { display: grid; grid-template-columns: 1fr 52px; gap: 8px; margin-top: 10px; }
+.cm-form .input { min-height: 52px; height: 52px; resize: vertical; }
+.cm-form .btn { height: 52px; width: 52px; padding: 0; }
+
+/* ---------- Botão atualizar ---------- */
+.refresh-btn { margin-left: 4px; }
+.refresh-btn.spin svg { animation: spin .8s linear infinite; }
+.chat-head .refresh-btn { margin-left: auto; }

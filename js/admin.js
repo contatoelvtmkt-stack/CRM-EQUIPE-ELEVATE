@@ -1,6 +1,6 @@
 // Clientes (editar/remover), Saldos de anúncios, Financeiro e Metas
-import { api, todayBR, addDays } from './api.js';
-import { I, state, isManager, $, esc, toast, openSheet, busy, emptyBox, ago, countUp } from './ui.js';
+import { api, todayBR, addDays, dominantColor } from './api.js';
+import { I, state, isManager, $, esc, toast, openSheet, busy, emptyBox, ago, countUp, clientColor } from './ui.js';
 
 const view = () => $('#view');
 const isAdmin = () => state.me?.role === 'admin';
@@ -52,6 +52,10 @@ export async function clientSheet(c, onDone, openLinks) {
         <div class="acts"><label class="btn btn-white btn-sm" style="width:100%;cursor:pointer">${I.image} ${c.logo_url ? 'Trocar foto / logo' : 'Adicionar foto / logo'}<input type="file" accept="image/*" id="cl-logo" class="sr"></label></div>
       </div>
       <div class="field"><label for="cl-name">Nome</label><input class="input" id="cl-name" required maxlength="80" value="${esc(c.name)}"></div>
+      <div class="field"><label for="cl-color">Cor do cliente <small class="muted">(faixa nas tarefas)</small></label>
+        <div class="color-row"><input type="color" id="cl-color" value="${clientColor(c) || '#cc0000'}">
+          <button type="button" class="btn btn-ghost btn-sm" id="cl-auto">${c.logo_url ? 'Usar cor da foto' : 'Cor automática'}</button>
+          <span class="muted" id="cl-cinfo" style="font-size:12px">${c.color ? '' : 'automática'}</span></div></div>
       <div class="field"><label for="cl-notes">Observações</label><textarea class="input" id="cl-notes" rows="3" maxlength="2000" placeholder="Contatos, preferências, combinados…">${esc(c.notes || '')}</textarea></div>
       ${isAdmin() ? `
       <fieldset class="pub-form"><legend>${I.cash} Plano <small>(só o administrador vê)</small></legend>
@@ -82,6 +86,13 @@ export async function clientSheet(c, onDone, openLinks) {
     </div>` : ''}`,
   (root, close) => {
     const done = () => { close(); onDone && onDone(); };
+    let color = c.color || null;
+    $('#cl-color', root).oninput = (e) => { color = e.target.value; $('#cl-cinfo', root).textContent = 'escolhida'; };
+    $('#cl-auto', root).onclick = async () => {
+      const auto = c.logo_url ? await dominantColor(c.logo_url) : null;
+      color = auto; $('#cl-color', root).value = auto || clientColor({ ...c, color: null });
+      $('#cl-cinfo', root).textContent = auto ? 'da foto' : 'automática';
+    };
     const seg = $('#cl-type', root);
     if (seg) seg.onclick = (e) => {
       const b = e.target.closest('[data-v]'); if (!b) return;
@@ -99,7 +110,7 @@ export async function clientSheet(c, onDone, openLinks) {
       if (!name) return ($('#cl-err', root).textContent = 'Informe o nome.');
       busy(e.submitter || e.target.querySelector('[type=submit]'), async () => {
         try {
-          await api.updateClient(c.id, { name, notes: $('#cl-notes', root).value.trim() });
+          await api.updateClient(c.id, { name, notes: $('#cl-notes', root).value.trim(), color });
           if (isAdmin()) {
             const val = Number(($('#cl-pv', root)?.value || '0').replace(/\./g, '').replace(',', '.')) || 0;
             await api.savePlan(c.id, {

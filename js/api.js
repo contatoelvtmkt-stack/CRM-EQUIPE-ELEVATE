@@ -38,6 +38,34 @@ export async function squareImage(file, size = 400) {
   } finally { URL.revokeObjectURL(url); }
 }
 
+// Cor predominante de uma imagem (ignora quase branco/preto e prefere cores vivas)
+export async function dominantColor(src) {
+  const url = typeof src === 'string' ? src : URL.createObjectURL(src);
+  try {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.crossOrigin = 'anonymous'; i.onload = () => res(i); i.onerror = rej; i.src = url; });
+    const c = document.createElement('canvas'); c.width = c.height = 40;
+    const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, 40, 40);
+    const d = g.getImageData(0, 0, 40, 40).data;
+    const buckets = {};
+    for (let i = 0; i < d.length; i += 4) {
+      const [r, gg, b, a] = [d[i], d[i + 1], d[i + 2], d[i + 3]];
+      if (a < 128) continue;
+      const max = Math.max(r, gg, b), min = Math.min(r, gg, b);
+      const sat = max ? (max - min) / max : 0;
+      if (max > 235 && sat < 0.12) continue; // quase branco
+      if (max < 28) continue; // quase preto
+      const k = `${r >> 4},${gg >> 4},${b >> 4}`;
+      const w = 1 + sat * 3;
+      const e = (buckets[k] ||= { n: 0, r: 0, g: 0, b: 0 });
+      e.n += w; e.r += r * w; e.g += gg * w; e.b += b * w;
+    }
+    const best = Object.values(buckets).sort((a, b) => b.n - a.n)[0];
+    if (!best) return null;
+    const hex = (v) => Math.round(v / best.n).toString(16).padStart(2, '0');
+    return `#${hex(best.r)}${hex(best.g)}${hex(best.b)}`;
+  } catch { return null; } finally { if (typeof src !== 'string') URL.revokeObjectURL(url); }
+}
+
 // PNG/WebP viram JPG de alta qualidade (o Instagram só publica JPG); fundo transparente vira branco
 export async function toJpegIfNeeded(file) {
   if (!/^image\/(png|webp)$/i.test(file.type)) return file;
@@ -79,7 +107,17 @@ function supabaseApi() {
     async pipeline() { return ok(await sb.from('pipeline').select('*').order('stage_at', { ascending: false }).limit(1000)); },
     async createTask(t) { return ok(await sb.from('tasks').insert(t).select().single()); },
     async updateTask(id, patch) { return ok(await sb.from('tasks').update(patch).eq('id', id).select().single()); },
-    async deleteTask(id) { ok(await sb.from('tasks').delete().eq('id', id)); },
+    async deleteTask(id) { ok(await sb.rpc('delete_task', { p_id: id })); },
+    async comments(rootId) { return ok(await sb.from('task_comments').select('*').eq('root_id', rootId).order('created_at')); },
+    async addComment(rootId, body, authorName) { return ok(await sb.from('task_comments').insert({ root_id: rootId, body, author_name: authorName || '' }).select().single()); },
+    async deleteComment(id) { ok(await sb.from('task_comments').delete().eq('id', id)); },
+    subscribeTasks(cb) {
+      const ch = sb.channel('tarefas-' + Math.random().toString(36).slice(2))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => cb('tasks'))
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'task_comments' }, (p) => cb('comments', p.new?.root_id || p.old?.root_id))
+        .subscribe();
+      return () => sb.removeChannel(ch);
+    },
     async review(id, action, note = '', stage = null) { ok(await sb.rpc('review_task', { p_id: id, p_action: action, p_note: note, p_stage: stage })); },
     async updateProfile(id, patch) { return ok(await sb.from('profiles').update(patch).eq('id', id).select().single()); },
     async uploadPhoto(file) {
@@ -118,7 +156,8 @@ function supabaseApi() {
       const path = `logos/${clientId}-${Date.now()}.jpg`;
       ok(await sb.storage.from('anexos').upload(path, blob, { contentType: 'image/jpeg' }));
       const url = sb.storage.from('anexos').getPublicUrl(path).data.publicUrl;
-      return ok(await sb.from('clients').update({ logo_url: url }).eq('id', clientId).select().single());
+      const color = await dominantColor(blob);
+      return ok(await sb.from('clients').update({ logo_url: url, ...(color ? { color } : {}) }).eq('id', clientId).select().single());
     },
     async approvalLink(rootId) {
       const d = ok(await sb.from('approval_links').select('*').eq('root_id', rootId).order('created_at', { ascending: false }).limit(1));
@@ -230,8 +269,8 @@ function demoApi() {
     { id: 'u6', name: 'Duda Alves', role: 'trafego', avatar: 'panda', stars: 11, email: 'trafego@elevate.com', active: true }
   ];
   const clients = [
-    { id: 'c1', name: 'Clínica Sorriso', active: true, instagram: 'clinicasorriso', ad_account_id: 'act_111', ad_account_name: 'Clínica Sorriso', ad_alert_threshold: 30 }, { id: 'c2', name: 'Studio Nova', active: true, instagram: 'studionova', ad_account_id: 'act_222', ad_account_name: 'Studio Nova', ad_alert_threshold: 30 },
-    { id: 'c3', name: 'Café Grão', active: true, instagram: 'cafegrao', ig_user_id: '17841400000000003', ig_username: 'cafegrao', fb_page_id: '1003', fb_page_name: 'Café Grão', ad_account_id: 'act_333', ad_account_name: 'Café Grão - Anúncios', ad_alert_threshold: 30 }, { id: 'c4', name: 'Academia Força', active: true }
+    { id: 'c1', name: 'Clínica Sorriso', color: '#2b8fd6', active: true, instagram: 'clinicasorriso', ad_account_id: 'act_111', ad_account_name: 'Clínica Sorriso', ad_alert_threshold: 30 }, { id: 'c2', name: 'Studio Nova', color: '#9b5de5', active: true, instagram: 'studionova', ad_account_id: 'act_222', ad_account_name: 'Studio Nova', ad_alert_threshold: 30 },
+    { id: 'c3', name: 'Café Grão', color: '#b5762f', active: true, instagram: 'cafegrao', ig_user_id: '17841400000000003', ig_username: 'cafegrao', fb_page_id: '1003', fb_page_name: 'Café Grão', ad_account_id: 'act_333', ad_account_name: 'Café Grão - Anúncios', ad_alert_threshold: 30 }, { id: 'c4', name: 'Academia Força', active: true }
   ];
   const mk = (title, who, status, prio, extra = {}) => {
     const id = uid();
@@ -355,6 +394,11 @@ function demoApi() {
   if (logged) me = people.find((p) => p.id === read('demo-user')) || people[0];
   let authCb = () => {};
   const msgSubs = new Set();
+  const taskSubs = new Set();
+  const comments = [
+    { id: 'cm1', root_id: tasks[7].root_id, user_id: null, author_name: 'Academia Força', body: 'Achamos o vermelho muito claro, pode deixar mais escuro? E aumentar o logo.', from_client: true, kind: 'alteracao', created_at: iso(5 * 3600e3) },
+    { id: 'cm2', root_id: tasks[7].root_id, user_id: 'u3', author_name: 'Lucas Lima', body: 'Fechado, ajusto ainda hoje.', from_client: false, kind: 'comentario', created_at: iso(4 * 3600e3) }
+  ];
   const latest = () => {
     const m = new Map();
     [...tasks].sort((a, b) => a.created_at.localeCompare(b.created_at)).forEach((x) => m.set(x.root_id, x));
@@ -397,7 +441,15 @@ function demoApi() {
       }
       return wait(x);
     },
-    async deleteTask(id) { tasks.splice(tasks.findIndex((k) => k.id === id), 1); },
+    async deleteTask(id) {
+      const root = tasks.find((k) => k.id === id)?.root_id;
+      for (let i = tasks.length - 1; i >= 0; i--) if (tasks[i].root_id === root) tasks.splice(i, 1);
+      taskSubs.forEach((cb) => cb('tasks'));
+    },
+    async comments(rootId) { return wait(comments.filter((c) => c.root_id === rootId)); },
+    async addComment(rootId, body) { const c = { id: uid(), root_id: rootId, user_id: me.id, author_name: me.name, body, from_client: false, kind: 'comentario', created_at: new Date().toISOString() }; comments.push(c); taskSubs.forEach((cb) => cb('comments', rootId)); return wait(c); },
+    async deleteComment(id) { comments.splice(comments.findIndex((c) => c.id === id), 1); },
+    subscribeTasks(cb) { taskSubs.add(cb); return () => taskSubs.delete(cb); },
     async review(id, action, note = '', stage = null) {
       const x = tasks.find((k) => k.id === id);
       if (action === 'mover') { Object.assign(x, { stage, stage_at: new Date().toISOString() }); autoSchedule(x); return; }
@@ -434,6 +486,7 @@ function demoApi() {
       const blob = await squareImage(file, 300);
       const c = clients.find((k) => k.id === clientId);
       c.logo_url = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+      c.color = (await dominantColor(blob)) || c.color;
       return wait(c);
     },
     async approvalLink(rootId) {

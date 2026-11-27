@@ -1,7 +1,7 @@
 import { api, todayBR } from './api.js';
 import { JEREMIAS_SVG, TURTLE_SVG } from './avatars.js';
 import { ONBOARDING_EVERY_MIN, JEREMIAS_EVERY_MIN } from './config.js';
-import { I, state, isManager, isReviewer, $, esc, face, toast, busy, hideTip, ROLES } from './ui.js';
+import { I, state, isManager, isReviewer, $, esc, face, toast, busy, hideTip, ROLES, sheetOpen } from './ui.js';
 import { taskCard, newTaskSheet } from './tasks.js';
 import { viewHoje, viewPainel, viewFluxo, viewRanking, viewChat, viewEnergia, viewEquipe, viewPerfil, viewMais, viewRelatorios } from './views.js';
 import { viewSaldos, viewFinanceiro, loadLowBalances, lowBalancePopup, isAdsTeam } from './admin.js';
@@ -32,14 +32,36 @@ async function start() {
   window.addEventListener('elvt:onboarding', () => showOnboarding());
 }
 
+// lembra o menu aberto (sobrevive a recarregar a página)
+const TAB_KEY = 'elvt-tab';
+function readTab() { try { return localStorage.getItem(TAB_KEY); } catch { return null; } }
+function saveTab() { try { localStorage.setItem(TAB_KEY, state.tab); } catch { /* */ } }
+
+// atualização em tempo real: quando alguém mexe numa tarefa, recarrega a tela
+let rtTimer = null, rtPending = false, rtUnsub = null;
+function startRealtime() {
+  if (rtUnsub || !api.subscribeTasks) return;
+  rtUnsub = api.subscribeTasks((type) => {
+    if (type !== 'tasks') return;
+    if (!['hoje', 'painel', 'fluxo'].includes(state.tab)) return;
+    clearTimeout(rtTimer);
+    rtTimer = setTimeout(() => {
+      if (sheetOpen || document.querySelector('.rep-view, .onb, .jer-wrap') || document.body.classList.contains('is-dragging')) { rtPending = true; return; }
+      refreshView(true);
+    }, 700);
+  });
+  window.addEventListener('elvt:sheet-closed', () => { if (rtPending) { rtPending = false; refreshView(true); } });
+}
+
 async function enter() {
   try { state.me = await api.me(); } catch (e) { renderLogin(e.message); return; }
   if (state.me.role === 'pendente' || state.me.active === false) { renderWaiting(); return; }
   await api.rollover().catch(() => {});
   [state.me, state.people, state.clients] = await Promise.all([api.me(), api.profiles(), api.clients().catch(() => [])]);
-  state.tab = 'hoje';
+  state.tab = readTab() || 'hoje';
   render();
   setTimeout(maybeJeremias, 4000);
+  startRealtime();
   // saldo baixo nas contas de anúncios (admin e gestor de tráfego)
   if (isAdsTeam()) loadLowBalances().then(() => { updateBadges(); lowBalancePopup((tab) => { state.tab = tab; render(); }); });
 }
@@ -97,6 +119,29 @@ function menuItems() {
   return items;
 }
 
+// botão "Atualizar" em todo menu: recarrega só a tela aberta
+let currentView = null;
+async function refreshView(silent = false) {
+  if (!currentView) return;
+  const y = window.scrollY;
+  const kb = document.querySelector('.kanban'); const kx = kb ? kb.scrollLeft : 0;
+  try { await currentView(); } catch (e) { if (!silent) toast(e.message); }
+  addRefreshButton(); updateBadges();
+  window.scrollTo(0, y);
+  const kb2 = document.querySelector('.kanban'); if (kb2) kb2.scrollLeft = kx;
+  if (!silent) toast('Atualizado.');
+}
+function addRefreshButton() {
+  const head = document.querySelector('#view .top, #view .chat-head');
+  if (!head || head.querySelector('.refresh-btn')) return;
+  const b = document.createElement('button');
+  b.className = 'icon-btn refresh-btn'; b.title = 'Atualizar'; b.setAttribute('aria-label', 'Atualizar');
+  b.innerHTML = I.refresh;
+  b.onclick = async () => { b.classList.add('spin'); await refreshView(); b.classList.remove('spin'); };
+  head.appendChild(b);
+}
+window.addEventListener('elvt:refresh', () => refreshView(true));
+
 // contador de contas com saldo baixo no menu
 function updateBadges() {
   const n = (state.lowBalances || []).length;
@@ -133,7 +178,7 @@ async function render() {
     </nav>`;
   $('#app').querySelectorAll('[data-tab]').forEach((b) => (b.onclick = () => {
     if (b.dataset.tab === 'nova') return newTaskSheet();
-    state.tab = b.dataset.tab; window.scrollTo(0, 0); render();
+    state.tab = b.dataset.tab; saveTab(); window.scrollTo(0, 0); render();
   }));
   const views = {
     hoje: viewHoje, painel: viewPainel, fluxo: viewFluxo, ranking: viewRanking, chat: viewChat,
@@ -142,7 +187,10 @@ async function render() {
   if (state.tab !== 'relatorios') state.relClient = null;
   if ((state.tab === 'saldos' && !isAdsTeam()) || (state.tab === 'financeiro' && state.me.role !== 'admin')) state.tab = 'hoje';
   if ((['fluxo', 'relatorios'].includes(state.tab) && !isReviewer()) || (['energia', 'equipe'].includes(state.tab) && !isManager())) state.tab = 'hoje';
+  saveTab();
+  currentView = views[state.tab];
   try { await views[state.tab](); } catch (e) { toast(e.message); }
+  addRefreshButton();
   updateBadges();
 }
 

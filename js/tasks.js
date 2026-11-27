@@ -1,10 +1,12 @@
 import { api, todayBR } from './api.js';
 import {
   I, PRIOS, STATUS, STAGE, ROLES, FORMATS, state, isManager, isReviewer, person, clientName, $, esc, firstName,
-  fmtShort, fmtPost, toLocalInput, fromLocalInput, isLate, ago, face, toast, openSheet, busy
+  fmtShort, fmtPost, toLocalInput, fromLocalInput, isLate, ago, face, toast, openSheet, busy, clientColor, hhmm
 } from './ui.js';
 
 const clientOf = (id) => state.clients.find((c) => c.id === id) || null;
+// faixa de cor do cliente no topo do cartão
+const ccStyle = (t) => { const c = clientColor(clientOf(t.client_id)); return c ? `--cc:${c};` : ''; };
 const PUB = {
   fila: ['Na fila do Instagram', ''], processando: ['Publicando no Instagram…', ''], publicando: ['Publicando no Instagram…', ''],
   publicado: ['Publicado no Instagram', 'solid'], erro: ['Erro ao publicar', 'late']
@@ -19,7 +21,7 @@ export function taskCard(t, { showWho = false, i = 0 } = {}) {
   const late = isLate(t);
   const cl = clientName(t.client_id);
   const inFlow = !['a_fazer', 'em_alteracao'].includes(t.stage);
-  return `<button class="task card rise st-${t.status}" style="--i:${i}" data-id="${t.id}">
+  return `<button class="task card rise st-${t.status} ${t.client_id ? 'has-cc' : ''}" style="--i:${i};${ccStyle(t)}" data-id="${t.id}">
     <span class="chk">${t.status === 'finalizada' ? I.check : t.status === 'nao_realizada' ? I.x : ''}</span>
     <span class="body">
       <h3>${esc(t.title)}</h3>
@@ -42,8 +44,8 @@ export function taskCard(t, { showWho = false, i = 0 } = {}) {
 export function kCard(t, i = 0) {
   const p = person(t.assigned_to);
   const cl = clientName(t.client_id);
-  return `<button class="kcard card rise" style="--i:${i}" data-id="${t.id}">
-    <span class="top-row"><span>${cl ? esc(cl) : 'Sem cliente'}</span><span class="tag p-${t.priority}">${PRIOS[t.priority]}</span></span>
+  return `<button class="kcard card rise ${t.client_id ? 'has-cc' : ''}" style="--i:${i};${ccStyle(t)}" data-id="${t.id}">
+    <span class="top-row"><span class="cname">${cl ? esc(cl) : 'Sem cliente'}</span><span class="tag p-${t.priority}">${PRIOS[t.priority]}</span></span>
     <h4>${esc(t.title)}</h4>
     ${t.post_format || t.post_at ? `<span class="meta" style="margin-top:6px">${t.post_format ? `<span class="tag">${FORMATS[t.post_format]}</span>` : ''}${t.post_at ? `<span class="tag">${I.calendar}${fmtPost(t.post_at)}</span>` : ''}</span>` : ''}
     ${t.stage === 'agendamento' ? `<span class="meta" style="margin-top:6px">${t.scheduled_at ? (pubTag(t) || `<span class="tag solid">${I.check} Agendado</span>`) : '<span class="tag late">Aguardando confirmação</span>'}</span>` : ''}
@@ -238,6 +240,12 @@ export function taskSheet(t, onDone) {
 
     <div style="margin-top:22px">${attachmentsHtml()}</div>
 
+    <div class="section-title" style="margin-top:22px"><h2>Comentários</h2><span id="cm-n"></span></div>
+    <div class="cmts" id="cmts"><p class="muted" style="font-size:13px">Carregando…</p></div>
+    <form class="cm-form" id="cm-f"><label class="sr" for="cm-t">Comentário</label>
+      <textarea class="input" id="cm-t" rows="2" maxlength="4000" placeholder="Escreva um comentário para a equipe…"></textarea>
+      <button class="btn btn-red" aria-label="Enviar comentário">${I.send}</button></form>
+
     <div class="actions">
       ${canEdit ? `<button class="btn btn-ghost" id="edit">Editar tarefa</button>` : ''}
       ${canDelete ? `<button class="btn btn-ghost" id="del" style="color:var(--red-hi)">Excluir tarefa</button>` : ''}
@@ -245,6 +253,7 @@ export function taskSheet(t, onDone) {
   (root, close) => {
     attachmentsBlock(root, t.root_id || t.id);
     if ($('#appr', root)) approvalBlock(root, t);
+    const unsubComments = commentsBlock(root, t.root_id || t.id);
     const fmt = $('#sc-fmt', root); let scFmt = fmtSel;
     if (fmt) fmt.onclick = (e) => { const b = e.target.closest('[data-v]'); if (!b) return; scFmt = b.dataset.v; fmt.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b)); };
     const scOk = $('#sc-ok', root);
@@ -328,10 +337,48 @@ export function taskSheet(t, onDone) {
     }
     const ed = $('#edit', root); if (ed) ed.onclick = () => { close(); newTaskSheet(t, done); };
     const dl = $('#del', root); if (dl) dl.onclick = async () => {
-      if (!confirm('Excluir esta tarefa?')) return;
+      if (!confirm('Excluir esta tarefa? Ela sai de todas as etapas e dias, junto com anexos e comentários.')) return;
       try { await api.deleteTask(t.id); close(); toast('Tarefa excluída.'); done(); } catch (er) { toast(er.message); }
     };
-  });
+    return unsubComments;
+  }, { modes: true });
+}
+
+// ---------------------------------------------------------------------
+// Comentários da tarefa (equipe e cliente), atualizados em tempo real
+// ---------------------------------------------------------------------
+function commentsBlock(root, rootId) {
+  const box = $('#cmts', root);
+  const draw = async () => {
+    let list = [];
+    try { list = await api.comments(rootId); } catch { /* */ }
+    $('#cm-n', root).textContent = list.length ? String(list.length) : '';
+    box.innerHTML = list.length ? list.map((c) => {
+      const mine = c.user_id && c.user_id === state.me.id;
+      const p = c.user_id ? person(c.user_id) : null;
+      const tag = c.kind === 'alteracao' ? '<span class="tag late">Pediu alteração</span>' : c.kind === 'aprovacao' ? `<span class="tag solid">${I.check} Aprovou</span>` : '';
+      return `<div class="cmt ${mine ? 'mine' : ''} ${c.from_client ? 'client' : ''}">
+        ${c.from_client ? `<span class="cmt-av">${esc((c.author_name || 'C').slice(0, 1).toUpperCase())}</span>` : mine ? '' : face(p || { name: c.author_name }, 30)}
+        <div><div class="who-m"><b>${c.from_client ? esc(c.author_name || 'Cliente') + ' · cliente' : mine ? 'Você' : esc(firstName(p?.name || c.author_name))}</b><span>${ago(c.created_at)}</span>${tag}
+          ${mine || isManager() ? `<button class="x" data-dc="${c.id}" aria-label="Apagar comentário">${I.x}</button>` : ''}</div>
+        <div class="bubble-m">${esc(c.body)}</div></div></div>`;
+    }).join('') : '<p class="muted" style="font-size:13px">Nenhum comentário ainda. Pedidos de alteração do cliente também aparecem aqui.</p>';
+    box.scrollTop = box.scrollHeight;
+  };
+  draw();
+  box.onclick = async (e) => {
+    const d = e.target.closest('[data-dc]');
+    if (d && confirm('Apagar este comentário?')) { await api.deleteComment(d.dataset.dc).catch((er) => toast(er.message)); draw(); }
+  };
+  const ta = $('#cm-t', root);
+  const send = async () => {
+    const body = ta.value.trim(); if (!body) return;
+    ta.value = '';
+    try { await api.addComment(rootId, body, state.me.name); draw(); } catch (er) { toast(er.message); ta.value = body; }
+  };
+  $('#cm-f', root).onsubmit = (e) => { e.preventDefault(); send(); };
+  ta.onkeydown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } };
+  return api.subscribeTasks ? api.subscribeTasks((type, rid) => { if (type === 'comments' && rid === rootId) draw(); }) : null;
 }
 
 // ---------------------------------------------------------------------

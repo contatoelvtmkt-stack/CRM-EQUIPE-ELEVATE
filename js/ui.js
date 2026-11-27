@@ -148,16 +148,55 @@ export function toast(msg) {
 export const hideTip = () => document.getElementById('tip')?.classList.remove('show');
 window.addEventListener('scroll', hideTip, { passive: true });
 
-export function openSheet(html, bind) {
+// Formas de abrir: metade da tela (lado), janela no centro (fundo desfocado) ou tela cheia
+const SHEET_MODES = [['side', 'Metade da tela', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16"/><rect x="12" y="4" width="9" height="16" fill="currentColor" stroke="none" opacity=".5"/></svg>'],
+  ['center', 'Janela no centro', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16"/><rect x="7" y="8" width="10" height="8" fill="currentColor" stroke="none" opacity=".5"/></svg>'],
+  ['full', 'Tela cheia', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="4" width="18" height="16" fill="currentColor" fill-opacity=".5"/></svg>']];
+const sheetMode = () => { try { return localStorage.getItem('elvt-sheet-mode') || 'side'; } catch { return 'side'; } };
+export let sheetOpen = false;
+export function openSheet(html, bind, opts = {}) {
   hideTip();
   const root = $('#sheet-root');
-  root.innerHTML = `<div class="overlay" data-close></div><div class="sheet" role="dialog" aria-modal="true">${html}</div>`;
+  const mode = opts.modes ? sheetMode() : 'side';
+  root.innerHTML = `<div class="overlay ${opts.modes ? 'm-' + mode : ''}" data-close></div><div class="sheet ${opts.modes ? 'm-' + mode : ''}" role="dialog" aria-modal="true">${html}</div>`;
+  if (opts.modes) {
+    const head = root.querySelector('.sheet-head');
+    const sw = document.createElement('div');
+    sw.className = 'sheet-modes';
+    sw.innerHTML = SHEET_MODES.map(([k, l, ic]) => `<button type="button" data-mode="${k}" class="${k === mode ? 'on' : ''}" title="${l}" aria-label="${l}">${ic}</button>`).join('');
+    head.insertBefore(sw, head.lastElementChild);
+    sw.onclick = (e) => {
+      const b = e.target.closest('[data-mode]'); if (!b) return;
+      try { localStorage.setItem('elvt-sheet-mode', b.dataset.mode); } catch { /* */ }
+      ['.overlay', '.sheet'].forEach((sel) => { const el = root.querySelector(sel); el.className = el.className.replace(/\bm-\w+/g, '').trim() + ' m-' + b.dataset.mode; });
+      sw.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+    };
+  }
   document.body.style.overflow = 'hidden';
-  const close = () => { root.innerHTML = ''; document.body.style.overflow = ''; document.removeEventListener('keydown', onKey); };
+  sheetOpen = true;
+  let cleanup = null;
+  const close = () => {
+    if (!sheetOpen) return;
+    sheetOpen = false;
+    try { cleanup && cleanup(); } catch { /* */ }
+    root.innerHTML = ''; document.body.style.overflow = ''; document.removeEventListener('keydown', onKey);
+    window.dispatchEvent(new Event('elvt:sheet-closed'));
+  };
   const onKey = (e) => { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKey);
   root.querySelectorAll('[data-close]').forEach((el) => (el.onclick = close));
-  bind && bind(root, close);
+  if (bind) cleanup = bind(root, close) || null;
+  if (typeof cleanup !== 'function') cleanup = null;
+  return close;
+}
+
+// cor do cliente: a escolhida/automática da foto, ou uma cor fixa calculada pelo nome
+const PALETTE = ['#cc0000', '#2b8fd6', '#e8913a', '#5fa047', '#9b5de5', '#d6249f', '#14a3a3', '#b5762f', '#e0b100', '#5a6cf0'];
+export function clientColor(c) {
+  if (!c) return null;
+  if (c.color) return c.color;
+  let h = 0; for (const ch of c.name || c.id || '') h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return PALETTE[h % PALETTE.length];
 }
 
 // dica flutuante dos gráficos

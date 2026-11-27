@@ -1,6 +1,6 @@
 import { renderReport, periodLabel } from './report.js';
 import { clientRow, clientSheet, goalsCard } from './admin.js';
-import { api, todayBR, addDays } from './api.js';
+import { api, todayBR, addDays, dominantColor } from './api.js';
 import { AVATARS, avatarSVG, avatarName, runnerSVG, TURTLE_SVG } from './avatars.js';
 import {
   I, ROLES, STAGES, STAGE, WD, SWATCH, state, isManager, isReviewer, person, clientName, $, esc, firstName, initials,
@@ -194,8 +194,12 @@ export async function viewFluxo() {
       (!q || norm(`${t.title} ${clientName(t.client_id)} ${person(t.assigned_to).name} ${t.description}`).includes(q)));
     const by = Object.fromEntries(STAGES.map(([k]) => [k, f.filter((t) => t.stage === k).sort((a, b) => (a.stage_at < b.stage_at ? 1 : -1))]));
     $('#chips').innerHTML = STAGES.map(([k, l]) => `<button data-k="${k}" class="${state.fluxoStage === k ? 'on' : ''}">${l}<b>${by[k].length}</b></button>`).join('');
-    $('#kb').innerHTML = STAGES.map(([k, l]) => `<section class="kcol ${state.fluxoStage === k ? 'on' : ''}" data-k="${k}">
-      <div class="kcol-head"><span>${l}</span><b>${by[k].length}</b></div>
+    const mins = minCols();
+    const kb = $('#kb');
+    kb.style.gridTemplateColumns = matchMedia('(min-width: 1000px)').matches
+      ? STAGES.map(([k]) => (mins.has(k) ? '50px' : 'minmax(168px, 1fr)')).join(' ') : '';
+    kb.innerHTML = STAGES.map(([k, l]) => `<section class="kcol ${state.fluxoStage === k ? 'on' : ''} ${mins.has(k) ? 'min' : ''}" data-k="${k}">
+      <div class="kcol-head"><span>${l}</span><b>${by[k].length}</b><button class="kmin" data-min="${k}" title="${mins.has(k) ? 'Abrir etapa' : 'Minimizar etapa'}" aria-label="${mins.has(k) ? 'Abrir' : 'Minimizar'} ${l}">${mins.has(k) ? I.plus : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M5 12h14"/></svg>'}</button></div>
       ${by[k].length ? by[k].map((t, i) => kCard(t, i)).join('') : `<p class="muted" style="font-size:13px;padding:14px 4px">${q || state.fluxoClient ? 'Nada encontrado.' : 'Nada nesta etapa.'}</p>`}
     </section>`).join('');
   };
@@ -206,6 +210,9 @@ export async function viewFluxo() {
   $('#fc').onchange = (e) => { state.fluxoClient = e.target.value; draw(); };
   $('#chips').onclick = (e) => { const b = e.target.closest('[data-k]'); if (b) { state.fluxoStage = b.dataset.k; draw(); } };
   $('#kb').onclick = (e) => {
+    const mn = e.target.closest('[data-min]');
+    if (mn) { e.stopPropagation(); toggleMinCol(mn.dataset.min); return draw(); }
+    if (e.target.closest('.kcol.min') && !e.target.closest('[data-id]')) { toggleMinCol(e.target.closest('.kcol').dataset.k); return draw(); }
     if (dragJustEnded) return;
     const b = e.target.closest('[data-id]'); if (b) taskSheet(items.find((t) => t.id === b.dataset.id), () => viewFluxo());
   };
@@ -243,6 +250,13 @@ export async function viewFluxo() {
     };
   });
   enableDrag($('.page', view()), (id, target) => moveTo(items.find((t) => t.id === id), target));
+}
+
+// etapas minimizadas do kanban (ficam salvas no navegador)
+function minCols() { try { return new Set(JSON.parse(localStorage.getItem('elvt-kmin') || '[]')); } catch { return new Set(); } }
+function toggleMinCol(k) {
+  const m = minCols(); m.has(k) ? m.delete(k) : m.add(k);
+  try { localStorage.setItem('elvt-kmin', JSON.stringify([...m])); } catch { /* */ }
 }
 
 // Arrastar com mouse (move 6px) ou com o dedo (segurar 300ms). Solta numa coluna (desktop) ou num botão de etapa (celular).
@@ -480,6 +494,11 @@ export async function viewEquipe(tab = 'pessoas') {
           <button class="btn btn-red" style="width:auto">${I.plus} Adicionar</button>
         </form>
         <div class="list grid-2">${clients.map((c, i) => clientRow(c, i, plansBy[c.id])).join('') || emptyBox('Nenhum cliente ainda.')}</div>`;
+      // clientes com foto e sem cor definida: calcula a cor da foto uma vez
+      clients.filter((c) => c.logo_url && !c.color).forEach(async (c) => {
+        const col = await dominantColor(c.logo_url);
+        if (col) { c.color = col; api.updateClient(c.id, { color: col }).catch(() => {}); }
+      });
       $('#cl-form').onsubmit = async (e) => {
         e.preventDefault();
         const name = e.target.name.value.trim(); if (!name) return;

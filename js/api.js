@@ -151,7 +151,7 @@ function supabaseApi() {
         if (/Failed to send|not found|404/i.test(msg)) msg = 'A função "ig-accounts" ainda não foi publicada no Supabase.';
         throw new Error(msg);
       }
-      return { accounts: data.accounts || [], adaccounts: data.adaccounts || [] };
+      return { accounts: data.accounts || [], adaccounts: data.adaccounts || [], adsError: data.ads_error || '', oldVersion: !('adaccounts' in data) };
     },
     async publishNow(id) {
       ok(await sb.rpc('publish_now', { p_id: id }));

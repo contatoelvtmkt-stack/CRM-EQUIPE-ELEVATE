@@ -538,12 +538,16 @@ function igSheet(cl, clients) {
     $('#ig-load', root).onclick = (e) => busy(e.currentTarget, async () => {
       $('#ig-err', root).textContent = '';
       try {
-        const { accounts: accs, adaccounts } = await api.igAccounts();
+        const { accounts: accs, adaccounts, adsError, oldVersion } = await api.igAccounts();
         $('#ad-list', root).innerHTML = adaccounts.length ? `<div class="section-title" style="margin-top:18px"><h2>Conta de anúncios</h2><span>tráfego pago no relatório</span></div>` + adaccounts.map((a) => `
           <button class="person card" data-ad="${esc(a.id)}" data-adname="${esc(a.name)}">
             <span class="client-logo" style="width:40px;height:40px">${I.chart}</span>
             <span class="info"><b>${esc(a.name)}</b><small>${esc(a.id)}${a.currency ? ' · ' + esc(a.currency) : ''}</small></span>${cl.ad_account_id === a.id ? `<span class="tag solid">${I.check}</span>` : ''}
-          </button>`).join('') : '<p class="muted" style="font-size:13px;margin-top:14px">Nenhuma conta de anúncios liberada ainda (atribua a conta ao CRM Elevate e inclua a permissão ads_read no token).</p>';
+          </button>`).join('') : `<div class="pub card" style="margin-top:14px"><div class="pub-h"><b>${I.info} Nenhuma conta de anúncios encontrada</b></div>
+            <p class="muted" style="font-size:13px;margin-top:8px;line-height:1.5">${oldVersion
+              ? 'A função "ig-accounts" no Supabase ainda está na versão antiga. Atualize o código dela (aba Code → colar → Deploy).'
+              : 'Confira se a conta de anúncios foi atribuída ao usuário do sistema "CRM Elevate" e se o token tem a permissão ads_read.'}</p>
+            ${adsError ? `<p class="just" style="margin-top:10px;font-size:12px;line-height:1.45;word-break:break-word">Resposta da Meta: ${esc(adsError)}</p>` : ''}</div>`;
         $('#ig-list', root).innerHTML = accs.length ? accs.map((a) => `
           <button class="person card" data-acc="${esc(a.id)}" data-user="${esc(a.username)}" data-page="${esc(a.page_id || '')}" data-pname="${esc(a.page || '')}">
             ${a.picture ? `<img src="${esc(a.picture)}" width="40" height="40" alt="" style="object-fit:cover">` : `<span class="client-logo" style="width:40px;height:40px">${I.insta}</span>`}

@@ -74,11 +74,31 @@ Deno.serve(async (req) => {
     } catch { /* lista das páginas já basta */ }
 
     // 3) contas de anúncios liberadas (precisa da permissão ads_read no token)
-    const ads = await graph('/me/adaccounts?fields=id,name,account_status,currency&limit=200').catch(() => ({ data: [] }));
-    const adaccounts = (ads.data ?? []).map((a: Record<string, string>) => ({ id: a.id, name: a.name ?? a.id, currency: a.currency ?? '' }))
-      .sort((a: Record<string, string>, b: Record<string, string>) => a.name.localeCompare(b.name));
+    const adMap = new Map<string, Record<string, string>>();
+    const adErrors: string[] = [];
+    const addAds = (list: Record<string, string>[]) => {
+      for (const a of list ?? []) if (a?.id && !adMap.has(a.id)) adMap.set(a.id, { id: a.id, name: a.name ?? a.id, currency: a.currency ?? '' });
+    };
+    try { addAds((await graph('/me/adaccounts?fields=id,name,account_status,currency&limit=200')).data); }
+    catch (e) { adErrors.push(`contas do usuário do sistema: ${(e as Error).message}`); }
+    // também pelas contas do portfólio (próprias e de clientes/parceiros)
+    try {
+      const me = await graph('/me?fields=id');
+      const biz = await graph(`/${me.id}/businesses?fields=id&limit=50`);
+      for (const b of biz.data ?? []) {
+        for (const edge of ['owned_ad_accounts', 'client_ad_accounts']) {
+          try { addAds((await graph(`/${b.id}/${edge}?fields=id,name,currency&limit=200`)).data); }
+          catch (e) { adErrors.push(`${edge}: ${(e as Error).message}`); }
+        }
+      }
+    } catch (e) { adErrors.push(`portfólio: ${(e as Error).message}`); }
+    const adaccounts = [...adMap.values()].sort((a, b) => a.name.localeCompare(b.name));
 
-    return json({ accounts: [...found.values()].sort((a, b) => (a.username || a.page).localeCompare(b.username || b.page)), adaccounts });
+    return json({
+      accounts: [...found.values()].sort((a, b) => (a.username || a.page).localeCompare(b.username || b.page)),
+      adaccounts,
+      ads_error: adaccounts.length ? '' : [...new Set(adErrors)].slice(0, 3).join(' | ')
+    });
   } catch (e) {
     return json({ error: (e as Error).message }, 500);
   }

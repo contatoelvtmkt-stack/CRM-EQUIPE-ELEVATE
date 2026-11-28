@@ -767,3 +767,10 @@ button.fbk:hover { border-color: var(--line-hi); transform: translateY(-1px); }
 .sdist em { font-style: normal; color: var(--muted); text-align: right; }
 .linkish { color: var(--red-hi); text-decoration: underline; font-size: 13px; }
 .rep-bar .btn-white { margin-right: 4px; }
+
+/* login: mostrar/ocultar senha */
+.pass-wrap { position: relative; }
+.pass-wrap .input { padding-right: 52px; }
+.pass-eye { position: absolute; top: 0; right: 0; bottom: 0; width: 48px; display: grid; place-items: center; color: var(--muted); transition: color .2s; }
+.pass-eye:hover, .pass-eye[aria-pressed="true"] { color: var(--white); }
+.pass-eye svg { width: 20px; height: 20px; }

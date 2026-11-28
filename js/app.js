@@ -75,12 +75,18 @@ function renderLogin(err = '') {
       <p class="sub">Entre para registrar as demandas de hoje e acompanhar o time.</p>
       <form id="login-form" novalidate>
         <div class="field"><label for="email">E-mail</label><input class="input" id="email" type="email" autocomplete="username" required></div>
-        <div class="field"><label for="pass">Senha</label><input class="input" id="pass" type="password" autocomplete="current-password" required></div>
+        <div class="field"><label for="pass">Senha</label><div class="pass-wrap"><input class="input" id="pass" type="password" autocomplete="current-password" required><button type="button" class="pass-eye" id="pass-eye" aria-label="Mostrar senha" aria-pressed="false">${EYE}</button></div></div>
         <div class="err" id="login-err">${esc(err)}</div>
         <button class="btn btn-red" type="submit">Entrar ${I.arrow}</button>
         ${api.demo ? '<p class="muted" style="font-size:12px;margin-top:14px;text-align:center;line-height:1.5">Modo demonstração: qualquer senha.<br>admin@ · gestora@ · designer@ · social@ · trafego@elevate.com</p>' : ''}
       </form>
     </div></div>`;
+  $('#pass-eye').onclick = (e) => {
+    const inp = $('#pass'), b = e.currentTarget, show = inp.type === 'password';
+    inp.type = show ? 'text' : 'password';
+    b.innerHTML = show ? EYE_OFF : EYE; b.setAttribute('aria-pressed', String(show));
+    b.setAttribute('aria-label', show ? 'Ocultar senha' : 'Mostrar senha'); inp.focus();
+  };
   $('#login-form').onsubmit = (e) => {
     e.preventDefault();
     busy(e.target.querySelector('button'), async () => {
@@ -89,6 +95,9 @@ function renderLogin(err = '') {
     });
   };
 }
+
+const EYE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_OFF = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 12s3.6-7 10-7c2.1 0 3.9.7 5.4 1.7M22 12s-3.6 7-10 7c-2.1 0-3.9-.7-5.4-1.7"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/></svg>';
 
 function renderWaiting() {
   $('#app').className = 'app';

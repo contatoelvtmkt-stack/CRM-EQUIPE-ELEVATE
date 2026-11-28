@@ -96,7 +96,9 @@
 .ap.rc { max-width: 1240px; }
 .rc-bar { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 16px 0 12px; }
 .rc-bar .btn { width: auto; }
-.rc-fb { padding: 18px; display: grid; gap: 12px; max-width: 760px; margin: 0 auto 18px; }
+.rc-fb { padding: 18px; display: grid; gap: 12px; max-width: 760px; margin: 28px auto 12px; scroll-margin-top: 16px; }
+.rc-acts { display: flex; gap: 8px; }
+.rc-acts .btn { width: auto; text-decoration: none; }
 .rc-fb-t b { font-size: 18px; font-weight: 500; display: block; }
 .rc-fb-t small { color: var(--muted); font-size: 13px; }
 .rc-stars { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
@@ -112,6 +114,4 @@
 .rc-done small { color: var(--muted); }
 .rc-done .btn { width: auto; margin-top: 6px; }
 .rc-pages { overflow: visible; padding: 0; }
-.rc-bottom { display: grid; justify-content: center; margin: 24px 0 10px; }
-.rc-bottom .btn { width: auto; padding: 0 28px; text-decoration: none; }
 @media (min-width: 900px) { .rc-fb { grid-template-columns: 1fr; } }

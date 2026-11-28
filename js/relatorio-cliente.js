@@ -84,10 +84,9 @@ function render(res) {
   const fb = feedbackBox(res.feedback);
   $('#ap').innerHTML = `${header(d)}
     <div class="rc-bar rise"><span class="tag solid">Disponível até ${fmtDate(res.expires_at)}</span>
-      <button class="btn btn-white btn-sm" id="pdf">Baixar PDF</button></div>
-    ${fb.html}
+      <span class="rc-acts"><a href="#fb" class="btn btn-ghost btn-sm">Avaliar</a><button class="btn btn-white btn-sm" id="pdf">Baixar PDF</button></span></div>
     <div class="rep-scroll rc-pages"><div class="rep-pages">${renderReport(d).replace(/<section class="rep-page">/g, '<div class="rep-fit"><section class="rep-page">').replace(/<\/section>/g, '</section></div>')}</div></div>
-    <div class="rc-bottom"><a href="#fb" class="btn btn-red">Avaliar este relatório</a></div>`;
+    ${fb.html}`;
   fb.bind();
   const fit = () => {
     const w = $('.rc-pages').clientWidth;

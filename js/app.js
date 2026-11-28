@@ -1,8 +1,8 @@
 import { api, todayBR } from './api.js';
 import { JEREMIAS_SVG, TURTLE_SVG } from './avatars.js';
-import { ONBOARDING_EVERY_MIN, JEREMIAS_EVERY_MIN } from './config.js';
+import { JEREMIAS_EVERY_MIN } from './config.js';
 import { I, state, isManager, isReviewer, $, esc, face, toast, busy, hideTip, ROLES, sheetOpen } from './ui.js';
-import { taskCard, newTaskSheet } from './tasks.js';
+import { newTaskSheet } from './tasks.js';
 import { viewHoje, viewPainel, viewFluxo, viewRanking, viewChat, viewEnergia, viewEquipe, viewPerfil, viewMais, viewRelatorios, viewSatisfacao } from './views.js';
 import { viewSaldos, viewFinanceiro, loadLowBalances, lowBalancePopup, isAdsTeam } from './admin.js';
 
@@ -20,8 +20,6 @@ async function start() {
   api.onAuth((s) => { if (!s) { state.me = null; renderLogin(); } });
   const s = await api.session();
   if (s) await enter(); else renderLogin();
-  maybeOnboarding();
-  setInterval(maybeOnboarding, 30_000);
   setInterval(maybeJeremias, 60_000);
   setInterval(async () => {
     if (state.me && todayBR() !== state.today) {
@@ -29,7 +27,6 @@ async function start() {
       await api.rollover().catch(() => {}); render();
     }
   }, 60_000);
-  window.addEventListener('elvt:onboarding', () => showOnboarding());
 }
 
 // lembra o menu aberto (sobrevive a recarregar a página)
@@ -225,96 +222,6 @@ export function showJeremias() {
     try { await api.pulse(b.dataset.a); } catch { /* segue mesmo assim */ }
     toast(b.dataset.a === 'ok' ? 'Boa! O Jeremias ficou feliz.' : 'Tudo bem, um passo de cada vez 🐢');
   };
-}
-
-// ---------------------------------------------------------------------
-// Carrossel de boas-vindas (1º acesso e a cada X minutos)
-// ---------------------------------------------------------------------
-const ONB_KEY = 'elvt-onb-last';
-function maybeOnboarding() {
-  if ($('.onb') || $('.jer-wrap') || document.hidden) return;
-  const last = Number(store.get(ONB_KEY) || 0);
-  if (Date.now() - last >= ONBOARDING_EVERY_MIN * 60_000) showOnboarding();
-}
-
-const fakeTask = (o) => ({ id: o.id, title: o.title, priority: o.priority, status: o.status, due_date: todayBR(), task_date: todayBR(), completed_at: new Date().toISOString(), justification: o.justification || '', review_note: o.review_note || '', stage: o.stage || 'a_fazer', carried_from: o.carried_from || null, assigned_to: '' });
-const SLIDES = [
-  {
-    h: 'Seu dia,<br><span class="red">organizado.</span>',
-    p: 'Todas as suas demandas em um só lugar. Abra o CRM, veja o que é para hoje e mãos à obra.',
-    art: () => `<div class="mock">
-      <div class="card-w"><small>Hoje · suas demandas</small><div style="font-size:34px;font-weight:500;margin-top:6px">3<small style="font-size:16px;font-weight:300">/5 finalizadas</small></div>
-      <div class="bar"><span class="f" style="width:60%"></span><span class="p" style="width:20%"></span></div></div>
-      ${taskCard(fakeTask({ id: 'a', title: 'Carrossel institucional', priority: 'alta', status: 'finalizada', stage: 'revisao_interna' }))}
-      ${taskCard(fakeTask({ id: 'b', title: 'Reels do lançamento', priority: 'urgente', status: 'pendente' }), { i: 1 })}
-    </div>`
-  },
-  {
-    h: 'Marque como<br><span class="red">ficou.</span>',
-    p: 'No fim do dia, marque cada demanda como finalizada, incompleta ou não realizada, e conte o porquê.',
-    art: () => `<div class="mock status-opts">
-      <button class="on" data-v="finalizada"><span class="chk"></span><span><b>Finalizada</b><small>Vai para a revisão interna.</small></span></button>
-      <button class="on" data-v="incompleta"><span class="chk"></span><span><b>Incompleta</b><small>Aguardando aprovação do cliente.</small></span></button>
-      <button class="on" data-v="nao_realizada"><span class="chk"></span><span><b>Não realizada</b><small>Briefing não chegou.</small></span></button>
-    </div>`
-  },
-  {
-    h: 'Nada fica<br><span class="red">pra trás.</span>',
-    p: 'O que não foi finalizado volta sozinho no dia seguinte. Se a revisão pedir ajuste, a peça volta como "em alteração".',
-    art: () => `<div class="mock">
-      ${taskCard(fakeTask({ id: 'c', title: 'Logo da campanha de verão', priority: 'alta', status: 'em_alteracao', review_note: 'Cliente pediu o vermelho mais escuro.' }))}
-      <img src="assets/img/seta.svg" alt="" style="width:14px;justify-self:center;margin:6px 0">
-      <div class="card-w"><b>A fazer → Revisão interna → Cliente → Agendamento → Concluído</b></div>
-    </div>`
-  },
-  {
-    h: 'Dia perfeito<br>vale <span class="red">estrela.</span>',
-    p: 'Entregou todas as demandas do dia dentro do prazo? Ganha uma estrela, e seu bichinho corre na frente do ranking.',
-    art: () => `<div class="stars-art">${I.star}${I.star}${I.star}</div>`
-  }
-];
-
-function showOnboarding() {
-  if ($('.onb')) return;
-  let i = 0;
-  const el = document.createElement('div');
-  el.className = 'onb';
-  document.body.appendChild(el);
-  let auto;
-  const close = () => { clearTimeout(auto); store.set(ONB_KEY, String(Date.now())); el.remove(); };
-  const draw = () => {
-    clearTimeout(auto);
-    const s = SLIDES[i];
-    el.innerHTML = `<div class="onb-in">
-      <div class="onb-top">
-        <span>${String(i + 1).padStart(2, '0')} / ${String(SLIDES.length).padStart(2, '0')}</span>
-        <span class="progress">${SLIDES.map((_, k) => `<i class="${k < i ? 'on' : k === i ? 'cur' : ''}"></i>`).join('')}</span>
-        <button data-skip>Pular</button>
-      </div>
-      <div class="onb-slide">
-        <div class="onb-text"><h2>${s.h}</h2><p>${s.p}</p></div>
-        <div class="onb-art"><div class="onb-art-in">${s.art()}</div></div>
-      </div>
-      <div class="onb-foot" style="${i === 0 ? 'grid-template-columns:1fr' : ''}">
-        ${i ? `<button class="back" data-back aria-label="Voltar">${I.back}</button>` : ''}
-        <button class="btn btn-white" data-next>${i === SLIDES.length - 1 ? 'Começar' : 'Próximo'} ${I.arrow}</button>
-      </div>
-    </div>`;
-    if (i < SLIDES.length - 1) auto = setTimeout(() => { i++; draw(); }, 6000);
-  };
-  el.onclick = (e) => {
-    if (e.target.closest('[data-skip]')) return close();
-    if (e.target.closest('[data-back]')) { i--; return draw(); }
-    if (e.target.closest('[data-next]')) { if (i === SLIDES.length - 1) return close(); i++; draw(); }
-  };
-  let x0 = null;
-  el.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
-  el.addEventListener('touchend', (e) => {
-    if (x0 === null) return;
-    const dx = e.changedTouches[0].clientX - x0; x0 = null;
-    if (dx < -50 && i < SLIDES.length - 1) { i++; draw(); } else if (dx > 50 && i > 0) { i--; draw(); }
-  });
-  draw();
 }
 
 start();

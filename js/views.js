@@ -670,7 +670,6 @@ export async function viewPerfil() {
         <button class="btn btn-white" style="width:auto">Salvar</button>
       </form>
       <div class="menu-list" style="margin-top:26px">
-        <button class="card" id="how">${I.info}<span>Ver como funciona</span>${I.arrow}</button>
         <button class="card" id="out">${I.out}<span>Sair</span></button>
       </div>
     </div>`;
@@ -692,7 +691,6 @@ export async function viewPerfil() {
     state.me = await api.updateProfile(state.me.id, { name: e.target.name.value.trim() });
     syncMe(); toast('Nome atualizado.'); viewPerfil();
   };
-  $('#how').onclick = () => window.dispatchEvent(new Event('elvt:onboarding'));
   $('#out').onclick = () => api.signOut();
   countUp(view());
 }
@@ -710,11 +708,9 @@ export function viewMais(items) {
   view().innerHTML = `${topBar('Tudo do CRM', 'Menu')}
     <div class="page"><div class="menu-list" style="margin-top:12px">
       ${items.map(([k, l, ic], i) => `<button class="card rise" style="--i:${i}" data-go="${k}">${ic}<span>${l}</span>${I.arrow}</button>`).join('')}
-      <button class="card rise" id="how2">${I.info}<span>Ver como funciona</span>${I.arrow}</button>
       <button class="card rise" id="out2">${I.out}<span>Sair</span></button>
     </div></div>`;
   bindCommon();
-  $('#how2').onclick = () => window.dispatchEvent(new Event('elvt:onboarding'));
   $('#out2').onclick = () => api.signOut();
 }
 
